@@ -1125,6 +1125,94 @@ apexGridUtils.setAllRowsFixed('IG_DETALLE', 'PESO_LIQUIDACION', '123.45', {
 });
 ```
 
+## 🔄 Recalculación asíncrona con procesos APEX
+
+### apexGridUtils.recalculateAllRowsAsync(gridStaticId, config)
+
+Recalcula todas las filas usando un proceso APEX asíncrono por fila (estructura similar a `recalculateAllRows`).
+
+Parámetros:
+- `gridStaticId` (string): Static ID del IG
+- `config` (object): Configuración del proceso asíncrono
+  - `sourceColumns` (array): Columnas fuente del grid (ej: ['COD_ANIMAL', 'PESO_LIQUIDACION'])
+  - `targetColumn` (string): Columna donde se guarda el resultado
+  - `serverProcess` (string): Nombre del proceso APEX (ej: "GET_PRECIO_ESCALA")
+  - `serverProcessParams` (array): Parámetros adicionales (ej: ['P1194_COD_EMPRESA', 'P1194_FEC_MOVIMIENTO'])
+  - `formula` (function): Función que procesa la respuesta: `(result, record, index, model) => valor`
+  - `decimalPlaces` (number): Decimales para formatear resultado (default: 2)
+  - `delay` (number): Delay entre llamadas en ms (default: 50)
+  - `showSpinner` (boolean): Mostrar spinner (default: true)
+  - `maxConcurrent` (number): Máximo de llamadas concurrentes (default: 5)
+  - `onComplete` (function): Callback al finalizar: `(completed, errors) => void`
+  - `onError` (function): Callback de error por fila: `(error, record, index) => void`
+  - `onlyEditable` (boolean): Solo filas editables (default: true)
+
+Ejemplo (repartir precio por kilo usando proceso APEX):
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+  sourceColumns: ['COD_ANIMAL', 'PESO_LIQUIDACION'], // se envían como x01, x02
+  targetColumn: 'PRECIO_KILO_LIQUIDACION',           // donde se guarda el resultado
+  serverProcess: 'GET_PRECIO_ESCALA',                // proceso APEX
+  serverProcessParams: ['P1194_COD_EMPRESA', 'P1194_FEC_MOVIMIENTO'], // se envían como x03, x04
+  formula: function(result, record, index, model) {  // procesar respuesta
+    const precioKilo = parseFloat(result) || 0;
+    const pesoLiquidacion = parseFloat(model.getValue(record, "PESO_LIQUIDACION")) || 0;
+    const tipCambio = parseFloat($v("P1194_TIP_CAMBIO")) || 1;
+    return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+  },
+  decimalPlaces: 2,
+  delay: 50,
+  showSpinner: true,
+  maxConcurrent: 3,
+  onComplete: (completed, errors) => {
+    console.log(`Procesadas: ${completed}, Errores: ${errors}`);
+  }
+});
+```
+
+**Cómo funciona automáticamente:**
+- `sourceColumns` se envían como `x01`, `x02`, etc. (valores de las columnas del grid)
+- `serverProcessParams` se envían como `x03`, `x04`, etc. con nomenclatura internacional:
+  - `GRID:ACTIVO` → valor de la columna ACTIVO del grid
+  - `ITEM:P1194_COD_EMPRESA` → valor del item de página
+  - `P1194_COD_EMPRESA` → valor del item de página (compatibilidad, patrón P + números + _)
+  - `'ACTIVO'`, `123`, `true` → valores directos
+- `formula` procesa la respuesta del servidor y devuelve el valor final
+- El resultado se setea automáticamente en `targetColumn`
+
+**Ejemplo de parámetros:**
+```javascript
+serverProcessParams: [
+  'GRID:ACTIVO',           // Columna del grid
+  'ITEM:P1194_COD_EMPRESA', // Item de página
+  'P1194_FEC_MOVIMIENTO',   // Item de página (compatibilidad, patrón P + números + _)
+  'PUNTOS',                 // Texto directo (no es item porque no sigue patrón P + números + _)
+  'ACTIVO',                 // Texto directo
+  123,                      // Número directo
+  true                      // Booleano directo
+]
+```
+
+**Detección inteligente de tipos:**
+- **Items de página**: Solo si siguen el patrón `P + números + _` (ej: `P1194_COD_EMPRESA`)
+- **Columnas del grid**: Con prefijo `GRID:` (ej: `GRID:PUNTOS`, `GRID:ACTIVO`)
+- **Items explícitos**: Con prefijo `ITEM:` (ej: `ITEM:P1194_COD_EMPRESA`)
+- **Valores directos**: Todo lo demás (ej: `PUNTOS`, `ACTIVO`, `123`, `true`)
+
+**Casos especiales resueltos:**
+- `'PUNTOS'` → Valor directo (no es item porque no sigue patrón `P + números + _`)
+- `'ACTIVO'` → Valor directo
+- `'P1194_COD_EMPRESA'` → Item de página (sigue patrón `P + números + _`)
+- `'GRID:PUNTOS'` → Columna del grid
+- `'ITEM:P1194_COD_EMPRESA'` → Item de página
+
+Características:
+- ✅ **Control de concurrencia**: Evita sobrecargar el servidor
+- ✅ **Spinner automático**: Muestra progreso visual
+- ✅ **Manejo de errores**: Continúa procesando aunque falle una fila
+- ✅ **Callbacks personalizables**: Para completar y manejar errores
+- ✅ **Filtrado inteligente**: Omite filas marcadas para eliminación
+
 ## 📝 Ejemplos de Uso Completos
 
 ### Ejemplo 1: Factura con Cálculos Automáticos
@@ -2028,4 +2116,176 @@ if (!selectedRecords || selectedRecords.length === 0) {
     // Seleccionar primera fila primero
     apexGridUtils.selectFirstRowOnInit('IG_ANIMALES');
 }
+```
+
+## Cálculo Asíncrono de Filas
+
+### `recalculateAllRowsAsync(gridStaticId, config)`
+
+Recalcula valores para todas las filas llamando un proceso de servidor APEX de forma asíncrona con control de concurrencia.
+
+#### Parámetros
+
+- `gridStaticId` (string): Static ID del Interactive Grid
+- `config` (object): Configuración del proceso
+  - `sourceColumns` (array): Columnas fuente del grid
+  - `targetColumn` (string): Columna destino donde se guardará el resultado
+  - `serverProcess` (string): Nombre del proceso de servidor APEX
+  - `serverProcessParams` (array): Parámetros adicionales para el proceso
+  - `formula` (function): Función para procesar el resultado del servidor: (result, values, record, index) => value
+  - `processValue` (function): Función para procesar valores antes de enviar al servidor: (value, columnName, record, index, model) => processedValue
+  - `decimalPlaces` (number): Decimales para formatear resultado (default: 2)
+  - `delay` (number): Delay entre llamadas en ms (default: 50)
+  - `showSpinner` (boolean): Mostrar spinner durante el proceso (default: true)
+  - `maxConcurrent` (number): Máximo de llamadas concurrentes (default: 5)
+  - `onComplete` (function): Callback al finalizar
+  - `onError` (function): Callback de error por fila
+  - `onlyEditable` (boolean): Solo filas editables (default: true)
+
+#### Nomenclatura de Parámetros
+
+La función soporta una nomenclatura internacional para los parámetros:
+
+- `GRID:COLUMN_NAME`: Extrae valor de la columna del grid
+- `ITEM:P_ITEM_NAME`: Extrae valor del item de página
+- `P_ITEM_NAME`: Compatibilidad con items que siguen el patrón P + números + _
+- Valores directos: Cualquier otro string o valor se usa directamente
+
+#### Ejemplo Básico
+
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    sourceColumns: ['PESO_LIQUIDACION', 'COD_ANIMAL'],
+    targetColumn: 'PRECIO_LIQUIDACION',
+    serverProcess: 'GET_PRECIO_ESCALA',
+    serverProcessParams: [
+        'ITEM:P1194_COD_EMPRESA',
+        'ITEM:P1194_FEC_MOVIMIENTO', 
+        'GRID:COD_ANIMAL',
+        'GRID:PESO_LIQUIDACION'
+    ],
+    formula: function(result, values, record, index) {
+        const pesoLiquidacion = parseFloat(values.PESO_LIQUIDACION) || 0;
+        const tipCambio = parseFloat($v('P1194_TIP_CAMBIO')) || 1;
+        const precioKilo = parseFloat(result) || 0;
+        return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+    }
+});
+```
+
+#### Ejemplo con Procesamiento de Valores
+
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    sourceColumns: ['PESO_LIQUIDACION', 'COD_ANIMAL'],
+    targetColumn: 'PRECIO_LIQUIDACION',
+    serverProcess: 'GET_PRECIO_ESCALA',
+    serverProcessParams: [
+        'ITEM:P1194_COD_EMPRESA',
+        'ITEM:P1194_FEC_MOVIMIENTO', 
+        'GRID:COD_ANIMAL',
+        'GRID:PESO_LIQUIDACION'
+    ],
+    formula: function(result, values, record, index) {
+        const pesoLiquidacion = parseFloat(values.PESO_LIQUIDACION) || 0;
+        const tipCambio = parseFloat($v('P1194_TIP_CAMBIO')) || 1;
+        const precioKilo = parseFloat(result) || 0;
+        return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+    },
+    processValue: function(value, columnName, record, index, model) {
+        // Aplicar el mismo procesamiento que en código original
+        if (columnName === 'PESO_LIQUIDACION') {
+            return parseFloat(value) || 0;
+        }
+        return value; // Para otros valores, pasar tal como están
+    }
+});
+```
+
+#### Ejemplo con Control de Errores
+
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    sourceColumns: ['PESO_LIQUIDACION', 'COD_ANIMAL'],
+    targetColumn: 'PRECIO_LIQUIDACION',
+    serverProcess: 'GET_PRECIO_ESCALA',
+    serverProcessParams: [
+        'ITEM:P1194_COD_EMPRESA',
+        'ITEM:P1194_FEC_MOVIMIENTO', 
+        'GRID:COD_ANIMAL',
+        'GRID:PESO_LIQUIDACION'
+    ],
+    formula: function(result, values, record, index) {
+        const pesoLiquidacion = parseFloat(values.PESO_LIQUIDACION) || 0;
+        const tipCambio = parseFloat($v('P1194_TIP_CAMBIO')) || 1;
+        const precioKilo = parseFloat(result) || 0;
+        return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+    },
+    onComplete: function(completed, errors) {
+        console.log(`Proceso completado: ${completed} filas procesadas, ${errors} errores`);
+        if (errors > 0) {
+            apex.message.alert(`Se procesaron ${completed} filas con ${errors} errores`);
+        }
+    },
+    onError: function(error, record, index) {
+        console.error(`Error en fila ${index}:`, error);
+        apex.message.alert(`Error al procesar fila ${index + 1}`);
+    }
+});
+```
+
+#### Ejemplo con Configuración Avanzada
+
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    sourceColumns: ['PESO_LIQUIDACION', 'COD_ANIMAL'],
+    targetColumn: 'PRECIO_LIQUIDACION',
+    serverProcess: 'GET_PRECIO_ESCALA',
+    serverProcessParams: [
+        'ITEM:P1194_COD_EMPRESA',
+        'ITEM:P1194_FEC_MOVIMIENTO', 
+        'GRID:COD_ANIMAL',
+        'GRID:PESO_LIQUIDACION'
+    ],
+    formula: function(result, values, record, index) {
+        const pesoLiquidacion = parseFloat(values.PESO_LIQUIDACION) || 0;
+        const tipCambio = parseFloat($v('P1194_TIP_CAMBIO')) || 1;
+        const precioKilo = parseFloat(result) || 0;
+        return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+    },
+    decimalPlaces: 2,
+    delay: 100,
+    showSpinner: true,
+    maxConcurrent: 3,
+    onlyEditable: true
+});
+```
+
+### Problemas con `recalculateAllRowsAsync`
+
+#### Error ORA-01861: Formato de fecha incorrecto
+```javascript
+// Usar processValue para controlar el formato de datos
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    // ... configuración
+    processValue: function(value, columnName, record, index, model) {
+        // Aplicar el mismo procesamiento que en código original
+        if (columnName === 'PESO_LIQUIDACION') {
+            return parseFloat(value) || 0;
+        }
+        return value; // Para otros valores, pasar tal como están
+    }
+});
+```
+
+#### Valores no se procesan correctamente
+```javascript
+// Verificar que los parámetros se estén pasando correctamente
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    // ... configuración
+    onError: function(error, record, index) {
+        console.error(`Error en fila ${index}:`, error);
+        console.log('Parámetros enviados:', params);
+    }
+});
 ```

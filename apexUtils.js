@@ -2090,6 +2090,7 @@ window.apexGridUtils = (function() {
         clearLastFocusedCell: clearLastFocusedCell,
         getFocusRestorationStatus: getFocusRestorationStatus,
         recalculateAllRows: recalculateAllRows,
+        recalculateAllRowsAsync: recalculateAllRowsAsync,
         setAllRowsValue: setAllRowsValue,
         setAllRowsFixed: setAllRowsFixed,
         setItemOnRowSelect: setItemOnRowSelect,
@@ -4754,7 +4755,7 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
      * @param {number} decimalPlaces - Cantidad de decimales a redondear (default: 2, solo si se usa formato antiguo)
      * @param {number} delay - Delay en milisegundos entre operaciones (default: 50)
      */
-    function recalculateAllRows(gridStaticId, sourceColumnsOrConfig, targetColumn, formula, decimalPlaces = 2, delay = 50) {
+    function recalculateAllRows(gridStaticId, sourceColumnsOrConfig, targetColumn, formula, decimalPlaces = 2, delay = 50, normalizeNumber = true) {
 
         setTimeout(() => {
 
@@ -4782,8 +4783,13 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
                         targetColumn: targetColumn,
                         formula: formula,
                         decimalPlaces: decimalPlaces,
-                        delay: delay
+                        delay: delay,
+                        normalizeNumber: normalizeNumber
                     };
+                }
+                
+                if (config.normalizeNumber === undefined) {
+                    config.normalizeNumber = normalizeNumber;
                 }
 
                 const grid = apex.region(gridStaticId).call("getViews").grid;
@@ -4807,7 +4813,12 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
                         // Construir objeto de valores fuente
                         const values = {};
                         config.sourceColumns.forEach(col => {
-                            values[col] = apexGridUtils.normalizeNumber(model.getValue(record, col));
+                            if(config.normalizeNumber){
+                                values[col] = apexGridUtils.normalizeNumber(model.getValue(record, col));
+                            }else{
+                                values[col] = model.getValue(record, col);
+                            }
+                            
                         });
 
                         // Calcular el nuevo valor usando la fórmula
@@ -4815,13 +4826,14 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
 
                         // Redondear a los decimales indicados
                         const decimalPlaces = config.decimalPlaces || 2;
-                        result = parseFloat(Number(result).toFixed(decimalPlaces));
+                        //result = parseFloat(Number(result).toFixed(decimalPlaces));
 
                         // Setear el valor en la columna destino
                         model.setValue(record, config.targetColumn, result);
 
-                        // Marcar como dirty si corresponde
+                        // Marcar como dirty y commit para que APEX sepa que el registro fue modificado
                         if (model.markDirty) model.markDirty(record);
+                        if (model.commitRecord) model.commitRecord(record);
 
                         processedRows++;
                         
@@ -4944,6 +4956,207 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
      */
     function setAllRowsFixed(gridStaticId, targetColumn, value, options) {
         return setAllRowsValue(gridStaticId, targetColumn, value, options || {});
+    }
+
+    /**
+     * Recalcula todas las filas usando un proceso APEX asíncrono por fila (versión simple).
+     * @param {string} gridStaticId - Static ID del Interactive Grid
+     * @param {object} config - Configuración del proceso asíncrono
+     * @param {array} config.sourceColumns - Columnas fuente para construir parámetros (ej: ['COD_ANIMAL', 'PESO_LIQUIDACION'])
+     * @param {string} config.targetColumn - Columna donde se guarda el resultado
+     * @param {string} config.serverProcess - Nombre del proceso APEX (ej: "GET_PRECIO_ESCALA")
+     * @param {array} config.serverProcessParams - Parámetros adicionales del servidor (ej: ['P1194_COD_EMPRESA', 'P1194_FEC_MOVIMIENTO'])
+     * @param {function} config.formula - Función que procesa la respuesta: (result, values, record, index) => valor
+     * @param {number} config.decimalPlaces - Decimales para formatear resultado (default: 2)
+     * @param {number} config.delay - Delay entre llamadas en ms (default: 50)
+     * @param {boolean} config.showSpinner - Mostrar spinner durante el proceso (default: true)
+     * @param {number} config.maxConcurrent - Máximo de llamadas concurrentes (default: 5)
+     * @param {function} config.onComplete - Callback al finalizar: (completed, errors) => void
+     * @param {function} config.onError - Callback de error por fila: (error, record, index) => void
+     * @param {boolean} config.onlyEditable - Solo filas editables (default: true)
+     * @param {function} config.processValue - Función para procesar valores: (value, columnName, record, index, model) => processedValue
+     * @returns {Promise<boolean>} - true si se inició correctamente
+     */
+    function recalculateAllRowsAsync(gridStaticId, config) {
+        return new Promise((resolve) => {
+            try {
+                config = config || {};
+                const sourceColumns = config.sourceColumns || [];
+                const targetColumn = config.targetColumn;
+                const serverProcess = config.serverProcess;
+                const serverProcessParams = config.serverProcessParams || [];
+                const formula = config.formula;
+                const decimalPlaces = config.decimalPlaces || 2;
+                const delay = config.delay || 50;
+                const showSpinner = config.showSpinner !== false; // default true
+                const maxConcurrent = config.maxConcurrent || 5;
+                const onlyEditable = config.onlyEditable !== false; // default true
+                const onComplete = config.onComplete || (() => {});
+                const onError = config.onError || ((err, record, index) => {
+                    console.error(`apexGridUtils: Error en fila ${index}:`, err);
+                });
+                const processValue = config.processValue || ((value, columnName, record, index, model) => value);
+
+                const region = apex.region(gridStaticId);
+                const $ig = region && region.widget ? region.widget() : null;
+                if (!$ig) {
+                    console.error('apexGridUtils: No se encontró la región IG con Static ID:', gridStaticId);
+                    resolve(false);
+                    return;
+                }
+                const grid = $ig.interactiveGrid('getViews', 'grid');
+                const model = grid && grid.model ? grid.model : null;
+                if (!model) {
+                    console.error('apexGridUtils: No se pudo obtener el modelo del IG:', gridStaticId);
+                    resolve(false);
+                    return;
+                }
+
+                let spinner$ = null;
+                if (showSpinner) {
+                    try { spinner$ = apex.util.showSpinner(); } catch(e) { /* noop */ }
+                }
+
+                // Recolectar filas válidas
+                const validRecords = [];
+                model.forEach(function(record, index, id) {
+                    if (isRecordMarkedForDeletion(record, model)) return;
+                    if (onlyEditable && model.allowEdit && !model.allowEdit(record)) return;
+                    validRecords.push({ record, index, id });
+                });
+
+                if (validRecords.length === 0) {
+                    if (spinner$) { try { spinner$.remove(); } catch(e) { /* noop */ } }
+                    console.log('apexGridUtils: No hay filas válidas para procesar');
+                    resolve(true);
+                    return;
+                }
+
+                let completed = 0;
+                let errors = 0;
+                let activeCalls = 0;
+                let currentIndex = 0;
+
+                const processNext = () => {
+                    if (currentIndex >= validRecords.length) return;
+                    if (activeCalls >= maxConcurrent) return;
+
+                    const { record, index, id } = validRecords[currentIndex++];
+                    activeCalls++;
+
+                    try {
+                        // Construir objeto de valores fuente (igual que recalculateAllRows)
+                        const values = {};
+                        sourceColumns.forEach(column => {
+                            const rawValue = model.getValue(record, column);
+                            const processedValue = processValue(rawValue, column, record, index, model);
+                            values[column] = processedValue;
+                        });
+                        
+                        // Construir parámetros para el server process (solo serverProcessParams, no sourceColumns)
+                        const params = {};
+                        
+                        // Solo agregar parámetros del servidor (como en tu código original)
+                        serverProcessParams.forEach((param, i) => {
+                            let value = param;
+                            
+                            if (typeof param === 'string') {
+                                if (param.startsWith('GRID:')) {
+                                    // Columna del grid: GRID:ACTIVO
+                                    const columnName = param.substring(5);
+                                    value = model.getValue(record, columnName);
+                                } else if (param.startsWith('ITEM:')) {
+                                    // Item de página: ITEM:P1194_COD_EMPRESA
+                                    const itemName = param.substring(5);
+                                    value = $v(itemName);
+                                } else if (param.startsWith('P') && param.match(/^P\d+_/)) {
+                                    // Item de página (compatibilidad): P1194_COD_EMPRESA (patrón P + números + _)
+                                    value = $v(param);
+                                }
+                                // Si no tiene prefijo, se usa como valor directo
+                                // PUNTOS, ACTIVO, etc. se tratan como valores directos
+                            }
+                            
+                            params[`x${String(i + 1).padStart(2, '0')}`] = value;
+                        });
+
+                        // Verificar si hay datos válidos para procesar
+                        const hasValidData = sourceColumns.some(column => {
+                            const value = model.getValue(record, column);
+                            return value !== null && value !== undefined && value !== '';
+                        });
+
+                        if (!hasValidData) {
+                            activeCalls--;
+                            completed++;
+                            processNext();
+                            return;
+                        }
+
+                        apex.server.process(serverProcess, params, {
+                            success: function(result) {
+                                try {
+                                    let finalValue = result;
+                                    
+                                    // Si hay fórmula personalizada, usarla para procesar el resultado (igual que recalculateAllRows)
+                                    if (formula && typeof formula === 'function') {
+                                        finalValue = formula(result, values, record, index);
+                                    }
+                                    
+                                    // Formatear con decimales si es número
+                                    if (typeof finalValue === 'number' && decimalPlaces !== null) {
+                                        finalValue = parseFloat(Number(finalValue).toFixed(decimalPlaces));
+                                    }
+                                    
+                                    // Setear el resultado en la columna destino
+                                    model.setValue(record, targetColumn, finalValue);
+                                } catch (e) {
+                                    onError(e, record, index);
+                                    errors++;
+                                }
+                                activeCalls--;
+                                completed++;
+                                checkComplete();
+                                setTimeout(processNext, delay);
+                            },
+                            error: function(err) {
+                                onError(err, record, index);
+                                errors++;
+                                activeCalls--;
+                                completed++;
+                                checkComplete();
+                                setTimeout(processNext, delayBetweenCalls);
+                            }
+                        });
+                    } catch (e) {
+                        onError(e, record, index);
+                        errors++;
+                        activeCalls--;
+                        completed++;
+                        checkComplete();
+                        setTimeout(processNext, delayBetweenCalls);
+                    }
+                };
+
+                const checkComplete = () => {
+                    if (completed >= validRecords.length) {
+                        if (spinner$) { try { spinner$.remove(); } catch(e) { /* noop */ } }
+                        console.log(`apexGridUtils: recalculateAllRowsAsync completado. Procesadas=${completed}, Errores=${errors}`);
+                        try { onComplete(completed, errors); } catch(e) { /* noop */ }
+                        resolve(true);
+                    }
+                };
+
+                // Iniciar procesamiento
+                for (let i = 0; i < Math.min(maxConcurrent, validRecords.length); i++) {
+                    setTimeout(processNext, i * delay);
+                }
+
+            } catch (error) {
+                console.error('apexGridUtils recalculateAllRowsAsync error:', error);
+                resolve(false);
+            }
+        });
     }
 
     /**
