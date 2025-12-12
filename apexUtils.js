@@ -2099,7 +2099,9 @@ window.apexGridUtils = (function() {
         selectFirstRowOnInit: selectFirstRowOnInit,
         syncGridToItem: syncGridToItem,
         syncItemToGrid: syncItemToGrid,
-        syncGridItemValues: syncGridItemValues
+        syncGridItemValues: syncGridItemValues,
+        getSelectedRows: getSelectedRows,
+        getSelectedRowsToItem: getSelectedRowsToItem
     };
 
     // Inicializar el módulo automáticamente
@@ -5747,6 +5749,281 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
             return !!(ok1 && ok2);
         } catch (error) {
             console.error('apexGridUtils: Error en syncGridItemValues:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Obtiene datos de las filas seleccionadas, aplica una fórmula opcional y retorna el resultado.
+     * @param {string} gridStaticId - Static ID del Interactive Grid.
+     * @param {object} config - Configuración.
+     * @param {array} config.sourceColumns - Columnas a obtener de las filas seleccionadas.
+     * @param {function} config.formula - Función que recibe (values, record, index) y retorna el valor calculado.
+     * @param {number} config.decimalPlaces - Decimales para formatear resultado (opcional).
+     * @param {boolean} config.autoTrigger - Si debe actualizarse automáticamente al cambiar selección (default: true).
+     * @returns {any} - Resultado de la fórmula o null si no hay filas seleccionadas.
+     */
+    function getSelectedRows(gridStaticId, config) {
+        try {
+            config = config || {};
+            const sourceColumns = config.sourceColumns || [];
+            const formula = config.formula;
+            const decimalPlaces = config.decimalPlaces;
+            const autoTrigger = config.autoTrigger !== false; // default true
+
+            if (!sourceColumns || sourceColumns.length === 0) {
+                console.error('apexGridUtils: sourceColumns es requerido en getSelectedRows');
+                return null;
+            }
+
+            // Obtener el grid y modelo
+            const region = apex.region(gridStaticId);
+            const $ig = region && region.widget ? region.widget() : null;
+            if (!$ig) {
+                console.error('apexGridUtils: No se encontró la región IG con Static ID:', gridStaticId);
+                return null;
+            }
+
+            const grid = $ig.interactiveGrid('getViews', 'grid');
+            const model = grid && grid.model ? grid.model : null;
+            if (!model) {
+                console.error('apexGridUtils: No se pudo obtener el modelo del IG:', gridStaticId);
+                return null;
+            }
+
+            // Función para obtener datos de las filas seleccionadas
+            const getSelectedRowsData = function() {
+                try {
+                    const selectedRecords = grid.getSelectedRecords && grid.getSelectedRecords();
+                    if (!selectedRecords || selectedRecords.length === 0) {
+                        return null;
+                    }
+
+                    // Recolectar datos de todas las filas seleccionadas
+                    const rowsData = [];
+                    selectedRecords.forEach(function(record, index) {
+                        const rowValues = {};
+                        sourceColumns.forEach(function(column) {
+                            const rawValue = model.getValue(record, column);
+                            // Manejar Popup LOV
+                            const value = (rawValue && typeof rawValue === 'object' && (rawValue.v !== undefined || rawValue.d !== undefined))
+                                ? rawValue.v
+                                : rawValue;
+                            rowValues[column] = normalizeNumber(value);
+                        });
+                        rowsData.push({
+                            record: record,
+                            index: index,
+                            values: rowValues
+                        });
+                    });
+
+                    // Si hay fórmula, aplicarla
+                    if (formula && typeof formula === 'function') {
+                        let result = null;
+                        // La fórmula puede procesar todas las filas acumulativamente
+                        // Pasamos cada fila individualmente para permitir acumulación en la fórmula
+                        rowsData.forEach(function(rowData, idx) {
+                            const formulaResult = formula(rowData.values, rowData.record, idx);
+                            // Si la fórmula retorna un valor, usarlo (útil para acumulaciones)
+                            if (formulaResult !== undefined && formulaResult !== null) {
+                                result = formulaResult;
+                            }
+                        });
+                        
+                        // La fórmula recibe values como objeto con las columnas como propiedades
+                        // Ejemplo: values.COSTO_DOLARES o values['COSTO_DOLARES']
+                        
+                        // Formatear con decimales si es necesario
+                        if (result !== null && result !== undefined && typeof result === 'number' && decimalPlaces !== undefined) {
+                            result = parseFloat(Number(result).toFixed(decimalPlaces));
+                        }
+                        
+                        return result;
+                    } else {
+                        // Si no hay fórmula, retornar el array de datos
+                        return rowsData;
+                    }
+                } catch (e) {
+                    console.error('apexGridUtils: Error obteniendo datos de filas seleccionadas:', e);
+                    return null;
+                }
+            };
+
+            // Si autoTrigger está habilitado, configurar listener
+            if (autoTrigger) {
+                const listenerId = 'getSelectedRows_' + gridStaticId + '_' + sourceColumns.join('_');
+                
+                // Limpiar listener previo
+                if ($ig && $ig.off) {
+                    $ig.off('interactivegridselectionchange.' + listenerId);
+                }
+
+                // Configurar listener de cambio de selección
+                if ($ig && $ig.on) {
+                    $ig.on('interactivegridselectionchange.' + listenerId, function(event, ui) {
+                        try {
+                            // Ejecutar la función cuando cambia la selección
+                            getSelectedRowsData();
+                        } catch (e) {
+                            console.error('apexGridUtils: Error en listener de getSelectedRows:', e);
+                        }
+                    });
+                }
+            }
+
+            // Ejecutar inicialmente y retornar resultado
+            return getSelectedRowsData();
+
+        } catch (error) {
+            console.error('apexGridUtils: Error en getSelectedRows:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Obtiene datos de las filas seleccionadas y los guarda en un item de página.
+     * @param {string} gridStaticId - Static ID del Interactive Grid.
+     * @param {object} config - Configuración.
+     * @param {array} config.sourceColumns - Columnas a obtener de las filas seleccionadas.
+     * @param {string} config.targetItem - Item de página donde guardar el resultado.
+     * @param {function} config.formula - Función opcional que recibe (values, record, index) y retorna el valor calculado.
+     * @param {number} config.decimalPlaces - Decimales para formatear resultado (opcional).
+     * @param {boolean} config.autoTrigger - Si debe actualizarse automáticamente al cambiar selección (default: true).
+     * @returns {boolean} - true si se configuró correctamente.
+     */
+    function getSelectedRowsToItem(gridStaticId, config) {
+        try {
+            config = config || {};
+            const sourceColumns = config.sourceColumns || [];
+            const targetItem = config.targetItem;
+            const formula = config.formula;
+            const decimalPlaces = config.decimalPlaces;
+            const autoTrigger = config.autoTrigger !== false; // default true
+
+            if (!sourceColumns || sourceColumns.length === 0) {
+                console.error('apexGridUtils: sourceColumns es requerido en getSelectedRowsToItem');
+                return false;
+            }
+
+            if (!targetItem) {
+                console.error('apexGridUtils: targetItem es requerido en getSelectedRowsToItem');
+                return false;
+            }
+
+            // Obtener el grid y modelo
+            const region = apex.region(gridStaticId);
+            const $ig = region && region.widget ? region.widget() : null;
+            if (!$ig) {
+                console.error('apexGridUtils: No se encontró la región IG con Static ID:', gridStaticId);
+                return false;
+            }
+
+            const grid = $ig.interactiveGrid('getViews', 'grid');
+            const model = grid && grid.model ? grid.model : null;
+            if (!model) {
+                console.error('apexGridUtils: No se pudo obtener el modelo del IG:', gridStaticId);
+                return false;
+            }
+
+            // Función para actualizar el item con datos de las filas seleccionadas
+            const updateItemFromSelectedRows = function() {
+                try {
+                    const selectedRecords = grid.getSelectedRecords && grid.getSelectedRecords();
+                    if (!selectedRecords || selectedRecords.length === 0) {
+                        // Si no hay filas seleccionadas, limpiar el item
+                        if (window.apex && apex.item && typeof apex.item(targetItem).setValue === 'function') {
+                            apex.item(targetItem).setValue('');
+                        } else if (typeof $s === 'function') {
+                            $s(targetItem, '');
+                        }
+                        return;
+                    }
+
+                    // Recolectar datos de todas las filas seleccionadas
+                    const rowsData = [];
+                    selectedRecords.forEach(function(record, index) {
+                        const rowValues = {};
+                        sourceColumns.forEach(function(column) {
+                            const rawValue = model.getValue(record, column);
+                            // Manejar Popup LOV
+                            const value = (rawValue && typeof rawValue === 'object' && (rawValue.v !== undefined || rawValue.d !== undefined))
+                                ? rawValue.v
+                                : rawValue;
+                            rowValues[column] = normalizeNumber(value);
+                        });
+                        rowsData.push({
+                            record: record,
+                            index: index,
+                            values: rowValues
+                        });
+                    });
+
+                    // Calcular valor final
+                    let finalValue = null;
+
+                    if (formula && typeof formula === 'function') {
+                        // Si hay fórmula, aplicarla a cada fila y usar el último resultado
+                        rowsData.forEach(function(rowData, idx) {
+                            const formulaResult = formula(rowData.values, rowData.record, idx);
+                            if (formulaResult !== undefined && formulaResult !== null) {
+                                finalValue = formulaResult;
+                            }
+                        });
+                    } else {
+                        // Si no hay fórmula, usar la primera columna de la primera fila
+                        if (rowsData.length > 0 && sourceColumns.length > 0) {
+                            finalValue = rowsData[0].values[sourceColumns[0]];
+                        }
+                    }
+
+                    // Formatear con decimales si es necesario
+                    if (finalValue !== null && finalValue !== undefined && typeof finalValue === 'number' && decimalPlaces !== undefined) {
+                        finalValue = parseFloat(Number(finalValue).toFixed(decimalPlaces));
+                    }
+
+                    // Guardar en el item
+                    if (window.apex && apex.item && typeof apex.item(targetItem).setValue === 'function') {
+                        apex.item(targetItem).setValue(finalValue !== null && finalValue !== undefined ? finalValue : '');
+                    } else if (typeof $s === 'function') {
+                        $s(targetItem, finalValue !== null && finalValue !== undefined ? finalValue : '');
+                    }
+
+                } catch (e) {
+                    console.error('apexGridUtils: Error actualizando item desde filas seleccionadas:', e);
+                }
+            };
+
+            // Si autoTrigger está habilitado, configurar listener
+            if (autoTrigger) {
+                const listenerId = 'getSelectedRowsToItem_' + gridStaticId + '_' + targetItem;
+                
+                // Limpiar listener previo
+                if ($ig && $ig.off) {
+                    $ig.off('interactivegridselectionchange.' + listenerId);
+                }
+
+                // Configurar listener de cambio de selección
+                if ($ig && $ig.on) {
+                    $ig.on('interactivegridselectionchange.' + listenerId, function(event, ui) {
+                        try {
+                            updateItemFromSelectedRows();
+                        } catch (e) {
+                            console.error('apexGridUtils: Error en listener de getSelectedRowsToItem:', e);
+                        }
+                    });
+                }
+            }
+
+            // Ejecutar inicialmente
+            setTimeout(function() {
+                updateItemFromSelectedRows();
+            }, 100);
+
+            return true;
+
+        } catch (error) {
+            console.error('apexGridUtils: Error en getSelectedRowsToItem:', error);
             return false;
         }
     }

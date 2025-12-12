@@ -18,6 +18,8 @@ Una biblioteca completa de utilidades para trabajar con Interactive Grids y elem
 - **`getCurrentRow()`** - Obtiene múltiples campos de la fila con foco como objeto
 - **`getCellValue()`** - Obtiene valor de celda específica por fila y columna
 - **`getNumericCellValue()`** - Obtiene valor numérico con normalización de formato europeo
+- **`getSelectedRows()`** - Obtiene datos de las filas seleccionadas y aplica una fórmula opcional
+- **`getSelectedRowsToItem()`** - Obtiene datos de las filas seleccionadas, aplica una fórmula y guarda el resultado en un item
 
 ### ✏️ Establecer Valores
 - **`setSelectedCellValue()`** - Establece valor en la celda seleccionada
@@ -486,6 +488,124 @@ apexGridUtils.setupGridListener('mi_grid', function() {
     sumaConfig.calculateSum();
 }, ['set', 'add', 'delete', 'reset']);
 ```
+
+### Filas Seleccionadas: Lectura y Cálculo
+
+#### getSelectedRows(gridStaticId, config)
+
+Obtiene los datos de las filas seleccionadas del IG y, opcionalmente, aplica una fórmula para devolver un único resultado calculado.
+
+```javascript
+// Ejemplo 1: Obtener los datos "en bruto" de las filas seleccionadas
+const filas = apexGridUtils.getSelectedRows('IG_DETALLE', {
+    sourceColumns: ['COD_ANIMAL', 'COSTO_DOLARES']
+});
+console.log(filas);
+// filas es un array de objetos:
+// [
+//   { record, index, values: { COD_ANIMAL: ..., COSTO_DOLARES: ... } },
+//   ...
+// ]
+
+// Ejemplo 2: Sumar COSTO_DOLARES de las filas seleccionadas
+const totalSeleccionado = apexGridUtils.getSelectedRows('IG_DETALLE', {
+    sourceColumns: ['COSTO_DOLARES'],
+    decimalPlaces: 2,
+    formula: function(values, record, index) {
+        // values contiene solo las columnas indicadas en sourceColumns
+        // esta función se ejecuta por cada fila seleccionada
+        if (!this.acumulador) {
+            this.acumulador = 0;
+        }
+        const costo = parseFloat(values.COSTO_DOLARES) || 0;
+        this.acumulador += costo;
+        return this.acumulador; // el último valor retornado será el resultado final
+    }
+});
+console.log('Total seleccionado:', totalSeleccionado);
+
+// Ejemplo 3: Varias columnas con montos (COSTO_DOLARES_1 ... COSTO_DOLARES_10)
+const totalMultiCols = apexGridUtils.getSelectedRows('IG_DETALLE', {
+    sourceColumns: [
+        'COSTO_DOLARES_1',
+        'COSTO_DOLARES_2',
+        'COSTO_DOLARES_3',
+        'COSTO_DOLARES_4',
+        'COSTO_DOLARES_5',
+        'COSTO_DOLARES_6',
+        'COSTO_DOLARES_7',
+        'COSTO_DOLARES_8',
+        'COSTO_DOLARES_9',
+        'COSTO_DOLARES_10'
+    ],
+    decimalPlaces: 2,
+    formula: function(values, record, index) {
+        if (!this.total) {
+            this.total = 0;
+        }
+        Object.keys(values).forEach(function(col) {
+            const v = parseFloat(values[col]) || 0;
+            this.total += v;
+        }, this);
+        return this.total;
+    }
+});
+console.log('Total COSTO_DOLARES(1..10) seleccionados:', totalMultiCols);
+```
+
+**Parámetros:**
+- `gridStaticId` (string): Static ID del Interactive Grid
+- `config.sourceColumns` (array): Columnas a leer de cada fila seleccionada
+- `config.formula` (function): Función que se ejecuta por cada fila seleccionada: `(values, record, index) => result`
+- `config.decimalPlaces` (number): Decimales para el resultado cuando la fórmula devuelve número (opcional)
+- `config.autoTrigger` (boolean): Si es `true`, se reejecuta automáticamente cuando cambia la selección (`interactivegridselectionchange`)
+
+**Retorno:**
+- Si NO se define `formula`: retorna un **array** con las filas seleccionadas (`[{ record, index, values }, ...]`).
+- Si se define `formula`: retorna el **último valor** que devuelva la fórmula (opcionalmente formateado con `decimalPlaces`).
+
+---
+
+#### getSelectedRowsToItem(gridStaticId, config)
+
+Similar a `getSelectedRows`, pero en lugar de devolver el resultado, lo escribe directamente en un item de página.
+
+```javascript
+// Ejemplo 1: Sumar COSTO_DOLARES de filas seleccionadas y guardarlo en un item
+apexGridUtils.getSelectedRowsToItem('IG_DETALLE', {
+    sourceColumns: ['COSTO_DOLARES'],
+    targetItem: 'P1_TOTAL_SELECCIONADO',
+    decimalPlaces: 2,
+    formula: function(values, record, index) {
+        if (!this.sum) {
+            this.sum = 0;
+        }
+        const costo = parseFloat(values.COSTO_DOLARES) || 0;
+        this.sum += costo;
+        return this.sum;
+    },
+    autoTrigger: true // recalcula cada vez que cambia la selección del IG
+});
+
+// Ejemplo 2: Sin fórmula → guarda el valor de la primera columna y primera fila seleccionada
+apexGridUtils.getSelectedRowsToItem('IG_DETALLE', {
+    sourceColumns: ['COD_ANIMAL'],
+    targetItem: 'P1_COD_ANIMAL_SELECCIONADO'
+});
+```
+
+**Parámetros:**
+- `gridStaticId` (string): Static ID del Interactive Grid
+- `config.sourceColumns` (array): Columnas a leer de cada fila seleccionada
+- `config.targetItem` (string): Nombre del item de página donde se guardará el resultado
+- `config.formula` (function): Función que se ejecuta por cada fila seleccionada: `(values, record, index) => result`
+- `config.decimalPlaces` (number): Decimales para el resultado cuando la fórmula devuelve número (opcional)
+- `config.autoTrigger` (boolean): Si es `true`, se reejecuta automáticamente cuando cambia la selección (`interactivegridselectionchange`)
+
+**Comportamiento:**
+- Si NO hay filas seleccionadas → limpia el item (`null`/vacío).
+- Si se define `formula` → el último valor devuelto por la fórmula se escribe en `targetItem`.
+- Si NO se define `formula` → escribe el valor de la **primera columna** de `sourceColumns` de la **primera fila seleccionada**.
 
 ### Recalculación Masiva de Filas
 
