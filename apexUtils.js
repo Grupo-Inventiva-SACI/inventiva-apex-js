@@ -711,6 +711,223 @@ window.apexGridUtils = (function() {
     }
 
     /**
+     * Suma los valores de una columna del Interactive Grid y los coloca en un item,
+     * aplicando una condición basada en otra columna.
+     * 
+     * @param {string} gridStaticId - Static ID del Interactive Grid
+     * @param {string} columnName - Nombre de la columna a sumar
+     * @param {string} targetItem - ID del item de APEX donde colocar el resultado
+     * @param {Object} conditionConfig - Configuración de la condición
+     * @param {string} conditionConfig.column - Nombre de la columna a evaluar
+     * @param {string} conditionConfig.operator - Operador: 'isNull', 'isNotNull', 'equals', 'notEquals', 
+     *                                            'greaterThan', 'greaterOrEqual', 'lessThan', 'lessOrEqual',
+     *                                            'in', 'notIn', 'contains', 'startsWith', 'endsWith', 'custom'
+     * @param {*} conditionConfig.value - Valor a comparar (no aplica para isNull/isNotNull)
+     * @param {function} conditionConfig.customFn - Función personalizada para operator='custom': function(record, model) => boolean
+     * @param {number} decimalPlaces - Número de decimales (default: 2)
+     * @param {boolean} autoUpdate - Actualizar automáticamente cuando cambie el grid (default: true)
+     * @returns {Object} Objeto con sum (valor inicial) y calculateSum (función para recalcular)
+     * 
+     * @example
+     * // Sumar TOTAL donde ESTADO es null
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'ESTADO',
+     *     operator: 'isNull'
+     * });
+     * 
+     * @example
+     * // Sumar TOTAL donde ESTADO es igual a 'ACTIVO'
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'ESTADO',
+     *     operator: 'equals',
+     *     value: 'ACTIVO'
+     * });
+     * 
+     * @example
+     * // Sumar TOTAL donde CANTIDAD es mayor a 10
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'CANTIDAD',
+     *     operator: 'greaterThan',
+     *     value: 10
+     * });
+     * 
+     * @example
+     * // Sumar TOTAL donde TIPO está en una lista de valores
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'TIPO',
+     *     operator: 'in',
+     *     value: ['A', 'B', 'C']
+     * });
+     * 
+     * @example
+     * // Sumar TOTAL con condición personalizada
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'CANTIDAD', // opcional para custom
+     *     operator: 'custom',
+     *     customFn: function(record, model) {
+     *         const cantidad = model.getValue(record, 'CANTIDAD');
+     *         const estado = model.getValue(record, 'ESTADO');
+     *         return cantidad > 5 && estado === 'ACTIVO';
+     *     }
+     * });
+     */
+    function sumColumnToItemWithCondition(gridStaticId, columnName, targetItem, conditionConfig, decimalPlaces = 2, autoUpdate = true) {
+        try {
+            const ig$ = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid");
+            const model = ig$.model;
+            
+            // Función para evaluar la condición
+            const evaluateCondition = function(record) {
+                const { column, operator, value, customFn } = conditionConfig;
+                
+                // Si es función personalizada
+                if (operator === 'custom' && typeof customFn === 'function') {
+                    return customFn(record, model);
+                }
+                
+                const columnValue = model.getValue(record, column);
+                
+                switch (operator) {
+                    case 'isNull':
+                        return columnValue === null || columnValue === undefined || columnValue === '';
+                    
+                    case 'isNotNull':
+                        return columnValue !== null && columnValue !== undefined && columnValue !== '';
+                    
+                    case 'equals':
+                        return columnValue == value; // Comparación flexible
+                    
+                    case 'strictEquals':
+                        return columnValue === value; // Comparación estricta
+                    
+                    case 'notEquals':
+                        return columnValue != value;
+                    
+                    case 'greaterThan':
+                        return normalizeNumber(columnValue) > normalizeNumber(value);
+                    
+                    case 'greaterOrEqual':
+                        return normalizeNumber(columnValue) >= normalizeNumber(value);
+                    
+                    case 'lessThan':
+                        return normalizeNumber(columnValue) < normalizeNumber(value);
+                    
+                    case 'lessOrEqual':
+                        return normalizeNumber(columnValue) <= normalizeNumber(value);
+                    
+                    case 'in':
+                        if (Array.isArray(value)) {
+                            return value.includes(columnValue);
+                        }
+                        return false;
+                    
+                    case 'notIn':
+                        if (Array.isArray(value)) {
+                            return !value.includes(columnValue);
+                        }
+                        return true;
+                    
+                    case 'contains':
+                        return String(columnValue).toLowerCase().includes(String(value).toLowerCase());
+                    
+                    case 'startsWith':
+                        return String(columnValue).toLowerCase().startsWith(String(value).toLowerCase());
+                    
+                    case 'endsWith':
+                        return String(columnValue).toLowerCase().endsWith(String(value).toLowerCase());
+                    
+                    case 'between':
+                        if (Array.isArray(value) && value.length >= 2) {
+                            const numValue = normalizeNumber(columnValue);
+                            return numValue >= normalizeNumber(value[0]) && numValue <= normalizeNumber(value[1]);
+                        }
+                        return false;
+                    
+                    default:
+                        console.warn(`apexGridUtils sumColumnToItemWithCondition: Operador desconocido '${operator}'`);
+                        return true; // Si no se reconoce el operador, incluir el registro
+                }
+            };
+            
+            // Función para calcular la suma con condición
+            const calculateSum = function() {
+                let total = 0;
+                let matchingRecords = 0;
+                
+                model.forEach(function(record, index, id) {
+                    // Ignorar los registros marcados para eliminación
+                    if (isRecordMarkedForDeletion(record, model)) {
+                        return;
+                    }
+                    
+                    // Evaluar la condición
+                    if (!evaluateCondition(record)) {
+                        return; // No cumple la condición, siguiente registro
+                    }
+                    
+                    matchingRecords++;
+                    const value = model.getValue(record, columnName);
+                    if (value !== null && value !== undefined && value !== '') {
+                        total += normalizeNumber(value);
+                    }
+                });
+                
+                const formattedTotal = parseFloat(total.toFixed(decimalPlaces));
+                apex.item(targetItem).setValue(formattedTotal);
+                return {
+                    total: formattedTotal,
+                    matchingRecords: matchingRecords
+                };
+            };
+            
+            // Calcular suma inicial
+            const initialResult = calculateSum();
+            
+            // Configurar actualización automática si está habilitada
+            if (autoUpdate) {
+                model.subscribe({
+                    onChange: function(type, change) {
+                        if (['set', 'add', 'delete', 'reset'].includes(type)) {
+                            setTimeout(calculateSum, 50);
+                        }
+                    }
+                });
+                
+                model.subscribe({
+                    onChange: function(type) {
+                        if (type === 'add' || type === 'delete' || type === 'reset') {
+                            setTimeout(calculateSum, 100);
+                        }
+                    }
+                });
+            }
+            
+            // Retornar objeto con la suma y la función para uso externo
+            return {
+                sum: initialResult.total,
+                matchingRecords: initialResult.matchingRecords,
+                calculateSum: calculateSum,
+                gridStaticId: gridStaticId,
+                columnName: columnName,
+                targetItem: targetItem,
+                conditionConfig: conditionConfig
+            };
+            
+        } catch (error) {
+            console.error('apexGridUtils sumColumnToItemWithCondition error:', error);
+            return {
+                sum: 0,
+                matchingRecords: 0,
+                calculateSum: function() { return { total: 0, matchingRecords: 0 }; },
+                gridStaticId: gridStaticId,
+                columnName: columnName,
+                targetItem: targetItem,
+                conditionConfig: conditionConfig
+            };
+        }
+    }
+
+    /**
      * Función rápida para sumar columna TOTAL a un item específico
      * @param {string} gridStaticId - Static ID del grid
      * @param {string} targetItem - ID del item donde colocar el total
@@ -2007,6 +2224,7 @@ window.apexGridUtils = (function() {
         toEuropeanFormat: toEuropeanFormat,
         ensureDecimalFormat: ensureDecimalFormat,
         sumColumnToItem: sumColumnToItem,
+        sumColumnToItemWithCondition: sumColumnToItemWithCondition,
         sumTotalToItem: sumTotalToItem,
         gotoCell: gotoCell,
         gotoFirstCell: gotoFirstCell,

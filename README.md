@@ -28,6 +28,7 @@ Una biblioteca completa de utilidades para trabajar con Interactive Grids y elem
 
 ### 🧮 Sumas y Totales
 - **`sumColumnToItem()`** - Suma todos los valores de una columna y los coloca en un item
+- **`sumColumnToItemWithCondition()`** - Suma valores de una columna aplicando condiciones sobre otra columna
 - **`sumTotalToItem()`** - Suma la columna TOTAL a un item específico
 
 ### 🎯 Navegación
@@ -487,6 +488,178 @@ apexGridUtils.setupGridListener('mi_grid', function() {
     // Recalcular sumas cuando cambie el grid
     sumaConfig.calculateSum();
 }, ['set', 'add', 'delete', 'reset']);
+```
+
+### Sumas con Condiciones - sumColumnToItemWithCondition()
+
+Suma los valores de una columna del Interactive Grid aplicando una condición basada en otra columna.
+
+#### Parámetros
+
+| Parámetro | Tipo | Default | Descripción |
+|-----------|------|---------|-------------|
+| `gridStaticId` | string | - | Static ID del Interactive Grid |
+| `columnName` | string | - | Nombre de la columna a sumar |
+| `targetItem` | string | - | ID del item de APEX donde colocar el resultado |
+| `conditionConfig` | object | - | Configuración de la condición (ver tabla abajo) |
+| `decimalPlaces` | number | 2 | Número de decimales |
+| `autoUpdate` | boolean | true | Actualizar automáticamente cuando cambie el grid |
+
+#### Operadores disponibles
+
+| Operador | Descripción | Requiere `value` |
+|----------|-------------|------------------|
+| `isNull` | Es null, undefined o vacío | No |
+| `isNotNull` | No es null, undefined ni vacío | No |
+| `equals` | Igual a (comparación flexible ==) | Sí |
+| `strictEquals` | Igual a (comparación estricta ===) | Sí |
+| `notEquals` | Diferente de | Sí |
+| `greaterThan` | Mayor que | Sí |
+| `greaterOrEqual` | Mayor o igual que | Sí |
+| `lessThan` | Menor que | Sí |
+| `lessOrEqual` | Menor o igual que | Sí |
+| `in` | Está en una lista de valores | Sí (array) |
+| `notIn` | No está en una lista de valores | Sí (array) |
+| `contains` | Contiene texto (case insensitive) | Sí |
+| `startsWith` | Empieza con texto (case insensitive) | Sí |
+| `endsWith` | Termina con texto (case insensitive) | Sí |
+| `between` | Está entre dos valores | Sí (array [min, max]) |
+| `custom` | Función personalizada | No (usa `customFn`) |
+
+#### Ejemplos de uso
+
+```javascript
+// 1. Sumar TOTAL donde ESTADO es NULL
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'ESTADO',
+    operator: 'isNull'
+});
+
+// 2. Sumar TOTAL donde ESTADO NO es NULL
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'ESTADO',
+    operator: 'isNotNull'
+});
+
+// 3. Sumar TOTAL donde ESTADO es igual a 'ACTIVO'
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'ESTADO',
+    operator: 'equals',
+    value: 'ACTIVO'
+});
+
+// 4. Sumar TOTAL donde CODIGO es igual a 100
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CODIGO',
+    operator: 'equals',
+    value: 100
+});
+
+// 5. Sumar TOTAL donde CANTIDAD es mayor a 10
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CANTIDAD',
+    operator: 'greaterThan',
+    value: 10
+});
+
+// 6. Sumar TOTAL donde CANTIDAD es mayor o igual a 10
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CANTIDAD',
+    operator: 'greaterOrEqual',
+    value: 10
+});
+
+// 7. Sumar TOTAL donde CANTIDAD es menor a 100
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CANTIDAD',
+    operator: 'lessThan',
+    value: 100
+});
+
+// 8. Sumar TOTAL donde TIPO está en una lista de valores
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'TIPO',
+    operator: 'in',
+    value: ['A', 'B', 'C']
+});
+
+// 9. Sumar TOTAL donde TIPO NO está en una lista de valores
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'TIPO',
+    operator: 'notIn',
+    value: ['X', 'Y', 'Z']
+});
+
+// 10. Sumar TOTAL donde PRECIO está entre 50 y 200
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'PRECIO',
+    operator: 'between',
+    value: [50, 200]
+});
+
+// 11. Sumar TOTAL donde DESCRIPCION contiene 'urgente'
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'DESCRIPCION',
+    operator: 'contains',
+    value: 'urgente'
+});
+
+// 12. Sumar TOTAL donde CODIGO empieza con 'PRD'
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CODIGO',
+    operator: 'startsWith',
+    value: 'PRD'
+});
+
+// 13. Condición personalizada (múltiples columnas)
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    operator: 'custom',
+    customFn: function(record, model) {
+        const cantidad = model.getValue(record, 'CANTIDAD');
+        const estado = model.getValue(record, 'ESTADO');
+        // Sumar solo si cantidad > 5 Y estado es ACTIVO
+        return cantidad > 5 && estado === 'ACTIVO';
+    }
+});
+
+// 14. Condición personalizada compleja con OR
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    operator: 'custom',
+    customFn: function(record, model) {
+        const estado = model.getValue(record, 'ESTADO');
+        const prioridad = model.getValue(record, 'PRIORIDAD');
+        // Sumar si estado es null O prioridad es 'ALTA'
+        return (estado === null || estado === '') || prioridad === 'ALTA';
+    }
+});
+
+// 15. Usar con menos decimales y sin auto-actualización
+let resultado = apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'ESTADO',
+    operator: 'equals',
+    value: 'PENDIENTE'
+}, 0, false);  // 0 decimales, sin auto-update
+
+// El resultado incluye información adicional
+console.log(resultado.sum);             // Valor de la suma
+console.log(resultado.matchingRecords); // Número de registros que cumplieron la condición
+resultado.calculateSum();               // Recalcular manualmente
+```
+
+#### Objeto de retorno
+
+La función retorna un objeto con las siguientes propiedades:
+
+```javascript
+{
+    sum: 1500.00,           // Valor calculado de la suma
+    matchingRecords: 5,      // Número de registros que cumplieron la condición
+    calculateSum: function,  // Función para recalcular manualmente
+    gridStaticId: 'mi_grid',
+    columnName: 'TOTAL',
+    targetItem: 'P1_SUMA',
+    conditionConfig: {...}   // Configuración de condición usada
+}
 ```
 
 ### Filas Seleccionadas: Lectura y Cálculo
