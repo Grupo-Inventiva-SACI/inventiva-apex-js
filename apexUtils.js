@@ -1228,7 +1228,7 @@ window.apexGridUtils = (function() {
                 if (isNumericColumn) {
                     try {
                         // Formatear al formato europeo (punto como separador de miles, coma como decimal)
-                        finalValue = value.toFixed(3).replace('.', ',');
+                        finalValue = value.toFixed(6).replace('.', ',');
                         console.log(`📊 apexGridUtils: Valor formateado al formato europeo: ${finalValue}`);
                     } catch (formatError) {
                         console.error('apexGridUtils: Error al formatear valor:', formatError);
@@ -5045,7 +5045,7 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
                         let result = config.formula(values, record, index);
 
                         // Redondear a los decimales indicados
-                        const decimalPlaces = config.decimalPlaces || 2;
+                        const decimalPlaces = config.decimalPlaces || 6;
                         //result = parseFloat(Number(result).toFixed(decimalPlaces));
 
                         // Setear el valor en la columna destino
