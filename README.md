@@ -209,7 +209,7 @@ habilitarEdicion('mi_grid_region');
 
 ### extraerDatosIG(configuracion)
 
-Extrae datos de un Interactive Grid con configuración avanzada.
+Extrae datos de un Interactive Grid con configuración avanzada. **Ignora automáticamente los registros marcados para eliminación.**
 
 ```javascript
 // Configuración básica
@@ -222,6 +222,14 @@ extraerDatosIG({
     ],
     campoDestino: 'P1_DATOS_EXTRAIDOS',
     formatoSalida: 'array' // 'array' o 'json'
+});
+
+// Obtener TODOS los campos automáticamente (nuevo)
+extraerDatosIG({
+    regionId: 'mi_grid',
+    campos: [], // Array vacío o null para obtener todos los campos
+    campoDestino: 'P1_DATOS_EXTRAIDOS',
+    formatoSalida: 'json'
 });
 
 // Con transformación de datos
@@ -242,19 +250,38 @@ extraerDatosIG({
 
 **Parámetros:**
 - `configuracion.regionId` (string): ID de la región del grid
-- `configuracion.campos` (array): Array de objetos con configuración de campos
+- `configuracion.campos` (array, opcional): Array de objetos con configuración de campos. Si es `null`, `undefined` o array vacío, obtiene automáticamente **todas las columnas** del modelo
 - `configuracion.campoDestino` (string): ID del item donde guardar los datos
-- `configuracion.formatoSalida` (string): 'array' o 'json' (opcional)
+- `configuracion.formatoSalida` (string): 'array' o 'json' (opcional, default: 'json')
 - `configuracion.callback` (function): Función a ejecutar después de la extracción (opcional)
+
+**Características:**
+- ✅ Ignora automáticamente los registros marcados para eliminación
+- ✅ Si no se especifican campos, obtiene automáticamente todas las columnas del Interactive Grid
+- ✅ Cuando se obtienen todos los campos automáticamente, `obligatorio` se establece en `false` por defecto
 
 ### extraerDatos(regionId, campos, campoDestino)
 
-Versión simplificada de extraerDatosIG.
+Versión simplificada de extraerDatosIG. **Ignora automáticamente los registros marcados para eliminación.**
 
 ```javascript
-// Extracción simple
+// Extracción simple con campos específicos
 extraerDatos('mi_grid', ['ID', 'NOMBRE', 'EMAIL'], 'P1_DATOS');
+
+// Obtener TODOS los campos automáticamente (nuevo)
+extraerDatos('mi_grid', null, 'P1_DATOS');
+// o
+extraerDatos('mi_grid', [], 'P1_DATOS');
 ```
+
+**Parámetros:**
+- `regionId` (string): ID de la región del grid
+- `campos` (array, opcional): Array de nombres de campos (strings) o `null`/`[]` para obtener todos los campos automáticamente
+- `campoDestino` (string): ID del item donde guardar los datos
+
+**Características:**
+- ✅ Ignora automáticamente los registros marcados para eliminación
+- ✅ Si `campos` es `null`, `undefined` o array vacío, obtiene automáticamente todas las columnas del Interactive Grid
 
 ## 🎯 APEX Grid Utils
 

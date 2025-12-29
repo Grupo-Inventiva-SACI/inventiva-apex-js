@@ -58,9 +58,6 @@ function extraerDatosIG(configuracion) {
         if (!configuracion.regionId) {
             throw new Error('regionId es obligatorio');
         }
-        if (!configuracion.campos || !Array.isArray(configuracion.campos)) {
-            throw new Error('campos debe ser un array');
-        }
         if (!configuracion.campoDestino) {
             throw new Error('campoDestino es obligatorio');
         }
@@ -69,6 +66,31 @@ function extraerDatosIG(configuracion) {
         var ig$ = apex.region(configuracion.regionId).widget().interactiveGrid("getViews", "grid");
         var model = ig$.model;
         var data = [];
+        
+        // Si no se pasan campos o el array está vacío, obtener todas las columnas del modelo
+        if (!configuracion.campos || !Array.isArray(configuracion.campos) || configuracion.campos.length === 0) {
+            console.log('extraerDatosIG: No se especificaron campos, obteniendo todas las columnas del modelo');
+            try {
+                var fields = model.getFields();
+                if (fields && fields.length > 0) {
+                    configuracion.campos = fields.map(function(field) {
+                        // field.id o field.property contiene el nombre de la columna
+                        var nombreCampo = field.id || field.property || field.name;
+                        return {
+                            nombre: nombreCampo,
+                            alias: nombreCampo.toLowerCase(),
+                            obligatorio: false // Por defecto no obligatorio cuando se obtienen todos los campos
+                        };
+                    });
+                    console.log('extraerDatosIG: Columnas encontradas:', configuracion.campos.map(function(c) { return c.nombre; }));
+                } else {
+                    throw new Error('No se pudieron obtener las columnas del modelo');
+                }
+            } catch (error) {
+                console.error('extraerDatosIG: Error al obtener todas las columnas:', error);
+                throw new Error('No se pudieron obtener las columnas del modelo. Asegúrate de pasar un array de campos o que el modelo tenga columnas disponibles.');
+            }
+        }
         
         // Función auxiliar para normalizar nombres de campos (mayúsculas a formato correcto)
         function normalizarCampo(campo) {
@@ -80,8 +102,36 @@ function extraerDatosIG(configuracion) {
             return valorObj?.v !== undefined ? valorObj.v : valorObj;
         }
         
+        // Función auxiliar para verificar si un registro está marcado para eliminación
+        function isRecordMarkedForDeletion(record, model) {
+            try {
+                // El método más fiable es a través de los metadatos del registro.
+                var recordId = model.getRecordId(record);
+                if (recordId) {
+                    var meta = model.getRecordMetadata(recordId);
+                    // Si el registro fue eliminado (meta.deleted) o es un agregado (meta.agg), no debe procesarse.
+                    if (meta && (meta.deleted || meta.agg)) {
+                        return true;
+                    }
+                }
+                // Fallback por si la metadata no está disponible o es un registro nuevo sin ID.
+                // La propiedad 't' con el valor 'd' también es un indicador interno de APEX.
+                if (record._meta && record._meta.t === 'd') {
+                    return true;
+                }
+            } catch (e) {
+                console.warn('extraerDatosIG: No se pudo verificar el estado del registro.', e);
+            }
+            return false;
+        }
+        
         // Recorrer todos los registros del modelo
         model.forEach(function(record) {
+            // Ignorar registros marcados para eliminación
+            if (isRecordMarkedForDeletion(record, model)) {
+                return; // Continuar con el siguiente registro
+            }
+            
             var registro = {};
             var incluirRegistro = true;
             
@@ -158,7 +208,7 @@ function extraerDatos(regionId, campos, campoDestino) {
     var configuracion = {
         regionId: regionId,
         campoDestino: campoDestino,
-        campos: campos.map(function(campo) {
+        campos: campos ? campos.map(function(campo) {
             if (typeof campo === 'string') {
                 return {
                     nombre: campo,
@@ -166,7 +216,7 @@ function extraerDatos(regionId, campos, campoDestino) {
                 };
             }
             return campo;
-        })
+        }) : null // Si no se pasan campos, se pasará null y extraerDatosIG obtendrá todos los campos
     };
     
     return extraerDatosIG(configuracion);
