@@ -207,6 +207,48 @@ habilitarEdicion('mi_grid_region');
 
 **Retorna:** `boolean` - true si se habilitó correctamente
 
+### addTitleToGrid(gridId, title)
+
+Agrega un título al header de un Interactive Grid. Inserta un elemento `<span>` con el título especificado y la clase `titleGridAux` en el header del grid.
+
+```javascript
+// Agregar título a un grid
+addTitleToGrid('Comprobantes', 'Comprobantes');
+
+// Agregar título personalizado
+addTitleToGrid('IG_PRODUCTOS', 'Lista de Productos');
+```
+
+**Parámetros:**
+- `gridId` (string): El ID estático de la región del Interactive Grid (regionId)
+- `title` (string): El título que se mostrará en el header del grid
+
+**Retorna:** `boolean` - true si se agregó correctamente
+
+**Características:**
+- ✅ Busca automáticamente el elemento del grid usando el ID `{gridId}_ig`
+- ✅ Encuentra o crea el div con clase `a-IG-header` si no existe
+- ✅ Si ya existe un título, lo actualiza en lugar de duplicarlo
+- ✅ Inserta el span con la clase `titleGridAux` al inicio del header
+- ✅ Manejo robusto de errores con mensajes informativos
+
+**Ejemplo de uso:**
+```javascript
+// En el evento Page Load o After Refresh
+addTitleToGrid('Comprobantes', 'Comprobantes');
+
+// El resultado será un span con el título en el header:
+// <div class="a-IG-header">
+//   <span class="titleGridAux">Comprobantes</span>
+//   ...
+// </div>
+```
+
+**Notas:**
+- El ID del elemento del grid debe seguir el patrón `{gridId}_ig`
+- Si el header no existe, se crea automáticamente
+- Si ya existe un span con la clase `titleGridAux`, se actualiza su contenido
+
 ### extraerDatosIG(configuracion)
 
 Extrae datos de un Interactive Grid con configuración avanzada. **Ignora automáticamente los registros marcados para eliminación.**
@@ -246,42 +288,63 @@ extraerDatosIG({
     ],
     campoDestino: 'P1_FECHAS'
 });
+
+// Con alias en mayúsculas (nuevo)
+extraerDatosIG({
+    regionId: 'mi_grid',
+    campos: ['COD_ATRIBUTO', 'CANT_CABEZAS', 'TIP_PRECIO_VENTA'],
+    campoDestino: 'P1_DATOS',
+    uppercase: true  // Los alias serán: COD_ATRIBUTO, CANT_CABEZAS, TIP_PRECIO_VENTA
+});
 ```
 
 **Parámetros:**
 - `configuracion.regionId` (string): ID de la región del grid
-- `configuracion.campos` (array, opcional): Array de objetos con configuración de campos. Si es `null`, `undefined` o array vacío, obtiene automáticamente **todas las columnas** del modelo
+- `configuracion.campos` (array, opcional): Array de objetos con configuración de campos o array de strings. Si es `null`, `undefined` o array vacío, obtiene automáticamente **todas las columnas** del modelo
 - `configuracion.campoDestino` (string): ID del item donde guardar los datos
 - `configuracion.formatoSalida` (string): 'array' o 'json' (opcional, default: 'json')
+- `configuracion.uppercase` (boolean, opcional): Si es `true`, los alias de los campos se generan en mayúsculas. Por defecto `false` (minúsculas) para mantener retrocompatibilidad
 - `configuracion.callback` (function): Función a ejecutar después de la extracción (opcional)
 
 **Características:**
 - ✅ Ignora automáticamente los registros marcados para eliminación
 - ✅ Si no se especifican campos, obtiene automáticamente todas las columnas del Interactive Grid
 - ✅ Cuando se obtienen todos los campos automáticamente, `obligatorio` se establece en `false` por defecto
+- ✅ Soporta alias en mayúsculas o minúsculas según el parámetro `uppercase`
 
-### extraerDatos(regionId, campos, campoDestino)
+### extraerDatos(regionId, campos, campoDestino, uppercase)
 
 Versión simplificada de extraerDatosIG. **Ignora automáticamente los registros marcados para eliminación.**
 
 ```javascript
-// Extracción simple con campos específicos
+// Extracción simple con campos específicos (alias en minúsculas por defecto)
 extraerDatos('mi_grid', ['ID', 'NOMBRE', 'EMAIL'], 'P1_DATOS');
+// Resultado: {id: ..., nombre: ..., email: ...}
 
-// Obtener TODOS los campos automáticamente (nuevo)
+// Con alias en mayúsculas (nuevo)
+extraerDatos('mi_grid', ['COD_ATRIBUTO', 'CANT_CABEZAS', 'TIP_PRECIO_VENTA'], 'P1_DATOS', true);
+// Resultado: {COD_ATRIBUTO: ..., CANT_CABEZAS: ..., TIP_PRECIO_VENTA: ...}
+
+// Obtener TODOS los campos automáticamente
 extraerDatos('mi_grid', null, 'P1_DATOS');
 // o
 extraerDatos('mi_grid', [], 'P1_DATOS');
+
+// Obtener todos los campos con alias en mayúsculas
+extraerDatos('mi_grid', [], 'P1_DATOS', true);
 ```
 
 **Parámetros:**
 - `regionId` (string): ID de la región del grid
 - `campos` (array, opcional): Array de nombres de campos (strings) o `null`/`[]` para obtener todos los campos automáticamente
 - `campoDestino` (string): ID del item donde guardar los datos
+- `uppercase` (boolean, opcional): Si es `true`, los alias de los campos se generan en mayúsculas. Por defecto `false` (minúsculas) para mantener retrocompatibilidad
 
 **Características:**
 - ✅ Ignora automáticamente los registros marcados para eliminación
 - ✅ Si `campos` es `null`, `undefined` o array vacío, obtiene automáticamente todas las columnas del Interactive Grid
+- ✅ Soporta alias en mayúsculas o minúsculas según el parámetro `uppercase`
+- ✅ **Retrocompatible**: El código existente sin el parámetro `uppercase` sigue funcionando igual (alias en minúsculas)
 
 ## 🎯 APEX Grid Utils
 

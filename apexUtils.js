@@ -67,31 +67,6 @@ function extraerDatosIG(configuracion) {
         var model = ig$.model;
         var data = [];
         
-        // Si no se pasan campos o el array está vacío, obtener todas las columnas del modelo
-        if (!configuracion.campos || !Array.isArray(configuracion.campos) || configuracion.campos.length === 0) {
-            console.log('extraerDatosIG: No se especificaron campos, obteniendo todas las columnas del modelo');
-            try {
-                var fields = model.getFields();
-                if (fields && fields.length > 0) {
-                    configuracion.campos = fields.map(function(field) {
-                        // field.id o field.property contiene el nombre de la columna
-                        var nombreCampo = field.id || field.property || field.name;
-                        return {
-                            nombre: nombreCampo,
-                            alias: nombreCampo.toLowerCase(),
-                            obligatorio: false // Por defecto no obligatorio cuando se obtienen todos los campos
-                        };
-                    });
-                    console.log('extraerDatosIG: Columnas encontradas:', configuracion.campos.map(function(c) { return c.nombre; }));
-                } else {
-                    throw new Error('No se pudieron obtener las columnas del modelo');
-                }
-            } catch (error) {
-                console.error('extraerDatosIG: Error al obtener todas las columnas:', error);
-                throw new Error('No se pudieron obtener las columnas del modelo. Asegúrate de pasar un array de campos o que el modelo tenga columnas disponibles.');
-            }
-        }
-        
         // Función auxiliar para normalizar nombres de campos (mayúsculas a formato correcto)
         function normalizarCampo(campo) {
             return campo.toUpperCase();
@@ -100,29 +75,6 @@ function extraerDatosIG(configuracion) {
         // Función auxiliar para obtener valor real (maneja poplovs)
         function obtenerValorReal(valorObj) {
             return valorObj?.v !== undefined ? valorObj.v : valorObj;
-        }
-        
-        // Función auxiliar para verificar si un registro está marcado para eliminación
-        function isRecordMarkedForDeletion(record, model) {
-            try {
-                // El método más fiable es a través de los metadatos del registro.
-                var recordId = model.getRecordId(record);
-                if (recordId) {
-                    var meta = model.getRecordMetadata(recordId);
-                    // Si el registro fue eliminado (meta.deleted) o es un agregado (meta.agg), no debe procesarse.
-                    if (meta && (meta.deleted || meta.agg)) {
-                        return true;
-                    }
-                }
-                // Fallback por si la metadata no está disponible o es un registro nuevo sin ID.
-                // La propiedad 't' con el valor 'd' también es un indicador interno de APEX.
-                if (record._meta && record._meta.t === 'd') {
-                    return true;
-                }
-            } catch (e) {
-                console.warn('extraerDatosIG: No se pudo verificar el estado del registro.', e);
-            }
-            return false;
         }
         
         // Recorrer todos los registros del modelo
@@ -137,6 +89,13 @@ function extraerDatosIG(configuracion) {
             
             configuracion.campos.forEach(function(configCampo) {
                 var nombreCampo = configCampo.nombre;
+                
+                // Validar que el nombreCampo sea válido
+                if (!nombreCampo || typeof nombreCampo !== 'string' || nombreCampo.trim() === '') {
+                    console.warn('extraerDatosIG: Campo sin nombre válido, omitiendo:', configCampo);
+                    return; // Saltar este campo
+                }
+                
                 var aliasCampo = configCampo.alias || nombreCampo.toLowerCase();
                 var obligatorio = configCampo.obligatorio !== false; // Por defecto true
                 var condicion = configCampo.condicion || null;
@@ -204,15 +163,20 @@ function extraerDatosIG(configuracion) {
 
 
 
-function extraerDatos(regionId, campos, campoDestino) {
+function extraerDatos(regionId, campos, campoDestino, uppercase) {
+    // Determinar si usar mayúsculas o minúsculas en los alias (por defecto false para retrocompatibilidad)
+    var usarMayusculas = uppercase === true;
+    var transformarAlias = usarMayusculas ? function(str) { return str.toUpperCase(); } : function(str) { return str.toLowerCase(); };
+    
     var configuracion = {
         regionId: regionId,
         campoDestino: campoDestino,
+        uppercase: uppercase, // Pasar el parámetro a extraerDatosIG
         campos: campos ? campos.map(function(campo) {
             if (typeof campo === 'string') {
                 return {
                     nombre: campo,
-                    alias: campo.toLowerCase()
+                    alias: transformarAlias(campo)
                 };
             }
             return campo;
@@ -2369,7 +2333,8 @@ window.apexGridUtils = (function() {
         syncItemToGrid: syncItemToGrid,
         syncGridItemValues: syncGridItemValues,
         getSelectedRows: getSelectedRows,
-        getSelectedRowsToItem: getSelectedRowsToItem
+        getSelectedRowsToItem: getSelectedRowsToItem,
+        addTitleToGrid: addTitleToGrid
     };
 
     // Inicializar el módulo automáticamente
@@ -6296,6 +6261,72 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
         }
     }
 
-   
+    /**
+     * Agrega un título al header de un Interactive Grid.
+     * 
+     * @param {string} gridId - El ID estático de la región del Interactive Grid (regionId).
+     * @param {string} title - El título que se mostrará en el header del grid.
+     * 
+     * @example
+     * addTitleToGrid('Comprobantes', 'Comprobantes');
+     */
+    function addTitleToGrid(gridId, title) {
+        try {
+            if (!gridId || typeof gridId !== 'string') {
+                throw new Error('gridId es obligatorio y debe ser una cadena de texto');
+            }
+            if (!title || typeof title !== 'string') {
+                throw new Error('title es obligatorio y debe ser una cadena de texto');
+            }
+
+            // Obtener el elemento del grid usando jQuery
+            // El ID del elemento del grid es {gridId}_ig
+            var gridElementId = gridId + '_ig';
+            var $grid = apex.jQuery('#' + gridElementId);
+
+            if ($grid.length === 0) {
+                throw new Error('No se encontró el Interactive Grid con ID: ' + gridElementId);
+            }
+
+            // Buscar el div con clase a-IG-header dentro del grid
+            var $header = $grid.find('.a-IG-header');
+
+            if ($header.length === 0) {
+                // Si no existe el header, intentar crearlo
+                // El header normalmente está al inicio del grid
+                $header = apex.jQuery('<div class="a-IG-header"></div>');
+                $grid.prepend($header);
+            }
+
+            // Buscar si ya existe un span con la clase titleGridAux
+            var $existingTitle = $header.find('span.titleGridAux');
+
+            if ($existingTitle.length > 0) {
+                // Si ya existe, actualizar el contenido
+                $existingTitle.text(title);
+            } else {
+                // Si no existe, crear el span y agregarlo al inicio del header
+                var $titleSpan = apex.jQuery('<span class="titleGridAux"></span>');
+                $titleSpan.text(title);
+                $header.prepend($titleSpan);
+            }
+
+            console.log('addTitleToGrid: Título agregado correctamente al grid ' + gridId);
+            return true;
+
+        } catch (error) {
+            console.error('addTitleToGrid: Error al agregar título al grid:', error);
+            throw error;
+        }
+    }
+
+// =============================================================================
+// EXPORTAR FUNCIONES GLOBALES A LA API PÚBLICA
+// =============================================================================
+// Agregar funciones globales al objeto apexUtils para mantener consistencia con la API pública
+apexUtils.habilitarEdicion = habilitarEdicion;
+apexUtils.extraerDatosIG = extraerDatosIG;
+apexUtils.extraerDatos = extraerDatos;
+apexUtils.addTitleToGrid = addTitleToGrid;
 
     
