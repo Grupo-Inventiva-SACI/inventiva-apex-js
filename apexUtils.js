@@ -58,9 +58,6 @@ function extraerDatosIG(configuracion) {
         if (!configuracion.regionId) {
             throw new Error('regionId es obligatorio');
         }
-        if (!configuracion.campos || !Array.isArray(configuracion.campos)) {
-            throw new Error('campos debe ser un array');
-        }
         if (!configuracion.campoDestino) {
             throw new Error('campoDestino es obligatorio');
         }
@@ -82,11 +79,23 @@ function extraerDatosIG(configuracion) {
         
         // Recorrer todos los registros del modelo
         model.forEach(function(record) {
+            // Ignorar registros marcados para eliminación
+            if (isRecordMarkedForDeletion(record, model)) {
+                return; // Continuar con el siguiente registro
+            }
+            
             var registro = {};
             var incluirRegistro = true;
             
             configuracion.campos.forEach(function(configCampo) {
                 var nombreCampo = configCampo.nombre;
+                
+                // Validar que el nombreCampo sea válido
+                if (!nombreCampo || typeof nombreCampo !== 'string' || nombreCampo.trim() === '') {
+                    console.warn('extraerDatosIG: Campo sin nombre válido, omitiendo:', configCampo);
+                    return; // Saltar este campo
+                }
+                
                 var aliasCampo = configCampo.alias || nombreCampo.toLowerCase();
                 var obligatorio = configCampo.obligatorio !== false; // Por defecto true
                 var condicion = configCampo.condicion || null;
@@ -154,19 +163,24 @@ function extraerDatosIG(configuracion) {
 
 
 
-function extraerDatos(regionId, campos, campoDestino) {
+function extraerDatos(regionId, campos, campoDestino, uppercase) {
+    // Determinar si usar mayúsculas o minúsculas en los alias (por defecto false para retrocompatibilidad)
+    var usarMayusculas = uppercase === true;
+    var transformarAlias = usarMayusculas ? function(str) { return str.toUpperCase(); } : function(str) { return str.toLowerCase(); };
+    
     var configuracion = {
         regionId: regionId,
         campoDestino: campoDestino,
-        campos: campos.map(function(campo) {
+        uppercase: uppercase, // Pasar el parámetro a extraerDatosIG
+        campos: campos ? campos.map(function(campo) {
             if (typeof campo === 'string') {
                 return {
                     nombre: campo,
-                    alias: campo.toLowerCase()
+                    alias: transformarAlias(campo)
                 };
             }
             return campo;
-        })
+        }) : null // Si no se pasan campos, se pasará null y extraerDatosIG obtendrá todos los campos
     };
     
     return extraerDatosIG(configuracion);
@@ -711,6 +725,223 @@ window.apexGridUtils = (function() {
     }
 
     /**
+     * Suma los valores de una columna del Interactive Grid y los coloca en un item,
+     * aplicando una condición basada en otra columna.
+     * 
+     * @param {string} gridStaticId - Static ID del Interactive Grid
+     * @param {string} columnName - Nombre de la columna a sumar
+     * @param {string} targetItem - ID del item de APEX donde colocar el resultado
+     * @param {Object} conditionConfig - Configuración de la condición
+     * @param {string} conditionConfig.column - Nombre de la columna a evaluar
+     * @param {string} conditionConfig.operator - Operador: 'isNull', 'isNotNull', 'equals', 'notEquals', 
+     *                                            'greaterThan', 'greaterOrEqual', 'lessThan', 'lessOrEqual',
+     *                                            'in', 'notIn', 'contains', 'startsWith', 'endsWith', 'custom'
+     * @param {*} conditionConfig.value - Valor a comparar (no aplica para isNull/isNotNull)
+     * @param {function} conditionConfig.customFn - Función personalizada para operator='custom': function(record, model) => boolean
+     * @param {number} decimalPlaces - Número de decimales (default: 2)
+     * @param {boolean} autoUpdate - Actualizar automáticamente cuando cambie el grid (default: true)
+     * @returns {Object} Objeto con sum (valor inicial) y calculateSum (función para recalcular)
+     * 
+     * @example
+     * // Sumar TOTAL donde ESTADO es null
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'ESTADO',
+     *     operator: 'isNull'
+     * });
+     * 
+     * @example
+     * // Sumar TOTAL donde ESTADO es igual a 'ACTIVO'
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'ESTADO',
+     *     operator: 'equals',
+     *     value: 'ACTIVO'
+     * });
+     * 
+     * @example
+     * // Sumar TOTAL donde CANTIDAD es mayor a 10
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'CANTIDAD',
+     *     operator: 'greaterThan',
+     *     value: 10
+     * });
+     * 
+     * @example
+     * // Sumar TOTAL donde TIPO está en una lista de valores
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'TIPO',
+     *     operator: 'in',
+     *     value: ['A', 'B', 'C']
+     * });
+     * 
+     * @example
+     * // Sumar TOTAL con condición personalizada
+     * apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+     *     column: 'CANTIDAD', // opcional para custom
+     *     operator: 'custom',
+     *     customFn: function(record, model) {
+     *         const cantidad = model.getValue(record, 'CANTIDAD');
+     *         const estado = model.getValue(record, 'ESTADO');
+     *         return cantidad > 5 && estado === 'ACTIVO';
+     *     }
+     * });
+     */
+    function sumColumnToItemWithCondition(gridStaticId, columnName, targetItem, conditionConfig, decimalPlaces = 2, autoUpdate = true) {
+        try {
+            const ig$ = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid");
+            const model = ig$.model;
+            
+            // Función para evaluar la condición
+            const evaluateCondition = function(record) {
+                const { column, operator, value, customFn } = conditionConfig;
+                
+                // Si es función personalizada
+                if (operator === 'custom' && typeof customFn === 'function') {
+                    return customFn(record, model);
+                }
+                
+                const columnValue = model.getValue(record, column);
+                
+                switch (operator) {
+                    case 'isNull':
+                        return columnValue === null || columnValue === undefined || columnValue === '';
+                    
+                    case 'isNotNull':
+                        return columnValue !== null && columnValue !== undefined && columnValue !== '';
+                    
+                    case 'equals':
+                        return columnValue == value; // Comparación flexible
+                    
+                    case 'strictEquals':
+                        return columnValue === value; // Comparación estricta
+                    
+                    case 'notEquals':
+                        return columnValue != value;
+                    
+                    case 'greaterThan':
+                        return normalizeNumber(columnValue) > normalizeNumber(value);
+                    
+                    case 'greaterOrEqual':
+                        return normalizeNumber(columnValue) >= normalizeNumber(value);
+                    
+                    case 'lessThan':
+                        return normalizeNumber(columnValue) < normalizeNumber(value);
+                    
+                    case 'lessOrEqual':
+                        return normalizeNumber(columnValue) <= normalizeNumber(value);
+                    
+                    case 'in':
+                        if (Array.isArray(value)) {
+                            return value.includes(columnValue);
+                        }
+                        return false;
+                    
+                    case 'notIn':
+                        if (Array.isArray(value)) {
+                            return !value.includes(columnValue);
+                        }
+                        return true;
+                    
+                    case 'contains':
+                        return String(columnValue).toLowerCase().includes(String(value).toLowerCase());
+                    
+                    case 'startsWith':
+                        return String(columnValue).toLowerCase().startsWith(String(value).toLowerCase());
+                    
+                    case 'endsWith':
+                        return String(columnValue).toLowerCase().endsWith(String(value).toLowerCase());
+                    
+                    case 'between':
+                        if (Array.isArray(value) && value.length >= 2) {
+                            const numValue = normalizeNumber(columnValue);
+                            return numValue >= normalizeNumber(value[0]) && numValue <= normalizeNumber(value[1]);
+                        }
+                        return false;
+                    
+                    default:
+                        console.warn(`apexGridUtils sumColumnToItemWithCondition: Operador desconocido '${operator}'`);
+                        return true; // Si no se reconoce el operador, incluir el registro
+                }
+            };
+            
+            // Función para calcular la suma con condición
+            const calculateSum = function() {
+                let total = 0;
+                let matchingRecords = 0;
+                
+                model.forEach(function(record, index, id) {
+                    // Ignorar los registros marcados para eliminación
+                    if (isRecordMarkedForDeletion(record, model)) {
+                        return;
+                    }
+                    
+                    // Evaluar la condición
+                    if (!evaluateCondition(record)) {
+                        return; // No cumple la condición, siguiente registro
+                    }
+                    
+                    matchingRecords++;
+                    const value = model.getValue(record, columnName);
+                    if (value !== null && value !== undefined && value !== '') {
+                        total += normalizeNumber(value);
+                    }
+                });
+                
+                const formattedTotal = parseFloat(total.toFixed(decimalPlaces));
+                apex.item(targetItem).setValue(formattedTotal);
+                return {
+                    total: formattedTotal,
+                    matchingRecords: matchingRecords
+                };
+            };
+            
+            // Calcular suma inicial
+            const initialResult = calculateSum();
+            
+            // Configurar actualización automática si está habilitada
+            if (autoUpdate) {
+                model.subscribe({
+                    onChange: function(type, change) {
+                        if (['set', 'add', 'delete', 'reset'].includes(type)) {
+                            setTimeout(calculateSum, 50);
+                        }
+                    }
+                });
+                
+                model.subscribe({
+                    onChange: function(type) {
+                        if (type === 'add' || type === 'delete' || type === 'reset') {
+                            setTimeout(calculateSum, 100);
+                        }
+                    }
+                });
+            }
+            
+            // Retornar objeto con la suma y la función para uso externo
+            return {
+                sum: initialResult.total,
+                matchingRecords: initialResult.matchingRecords,
+                calculateSum: calculateSum,
+                gridStaticId: gridStaticId,
+                columnName: columnName,
+                targetItem: targetItem,
+                conditionConfig: conditionConfig
+            };
+            
+        } catch (error) {
+            console.error('apexGridUtils sumColumnToItemWithCondition error:', error);
+            return {
+                sum: 0,
+                matchingRecords: 0,
+                calculateSum: function() { return { total: 0, matchingRecords: 0 }; },
+                gridStaticId: gridStaticId,
+                columnName: columnName,
+                targetItem: targetItem,
+                conditionConfig: conditionConfig
+            };
+        }
+    }
+
+    /**
      * Función rápida para sumar columna TOTAL a un item específico
      * @param {string} gridStaticId - Static ID del grid
      * @param {string} targetItem - ID del item donde colocar el total
@@ -1011,7 +1242,7 @@ window.apexGridUtils = (function() {
                 if (isNumericColumn) {
                     try {
                         // Formatear al formato europeo (punto como separador de miles, coma como decimal)
-                        finalValue = value.toFixed(3).replace('.', ',');
+                        finalValue = value.toFixed(6).replace('.', ',');
                         console.log(`📊 apexGridUtils: Valor formateado al formato europeo: ${finalValue}`);
                     } catch (formatError) {
                         console.error('apexGridUtils: Error al formatear valor:', formatError);
@@ -2007,6 +2238,7 @@ window.apexGridUtils = (function() {
         toEuropeanFormat: toEuropeanFormat,
         ensureDecimalFormat: ensureDecimalFormat,
         sumColumnToItem: sumColumnToItem,
+        sumColumnToItemWithCondition: sumColumnToItemWithCondition,
         sumTotalToItem: sumTotalToItem,
         gotoCell: gotoCell,
         gotoFirstCell: gotoFirstCell,
@@ -2090,6 +2322,7 @@ window.apexGridUtils = (function() {
         clearLastFocusedCell: clearLastFocusedCell,
         getFocusRestorationStatus: getFocusRestorationStatus,
         recalculateAllRows: recalculateAllRows,
+        recalculateAllRowsAsync: recalculateAllRowsAsync,
         setAllRowsValue: setAllRowsValue,
         setAllRowsFixed: setAllRowsFixed,
         setItemOnRowSelect: setItemOnRowSelect,
@@ -2098,7 +2331,10 @@ window.apexGridUtils = (function() {
         selectFirstRowOnInit: selectFirstRowOnInit,
         syncGridToItem: syncGridToItem,
         syncItemToGrid: syncItemToGrid,
-        syncGridItemValues: syncGridItemValues
+        syncGridItemValues: syncGridItemValues,
+        getSelectedRows: getSelectedRows,
+        getSelectedRowsToItem: getSelectedRowsToItem,
+        addTitleToGrid: addTitleToGrid
     };
 
     // Inicializar el módulo automáticamente
@@ -4754,7 +4990,7 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
      * @param {number} decimalPlaces - Cantidad de decimales a redondear (default: 2, solo si se usa formato antiguo)
      * @param {number} delay - Delay en milisegundos entre operaciones (default: 50)
      */
-    function recalculateAllRows(gridStaticId, sourceColumnsOrConfig, targetColumn, formula, decimalPlaces = 2, delay = 50) {
+    function recalculateAllRows(gridStaticId, sourceColumnsOrConfig, targetColumn, formula, decimalPlaces = 2, delay = 50, normalizeNumber = true) {
 
         setTimeout(() => {
 
@@ -4782,8 +5018,13 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
                         targetColumn: targetColumn,
                         formula: formula,
                         decimalPlaces: decimalPlaces,
-                        delay: delay
+                        delay: delay,
+                        normalizeNumber: normalizeNumber
                     };
+                }
+                
+                if (config.normalizeNumber === undefined) {
+                    config.normalizeNumber = normalizeNumber;
                 }
 
                 const grid = apex.region(gridStaticId).call("getViews").grid;
@@ -4807,21 +5048,27 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
                         // Construir objeto de valores fuente
                         const values = {};
                         config.sourceColumns.forEach(col => {
-                            values[col] = apexGridUtils.normalizeNumber(model.getValue(record, col));
+                            if(config.normalizeNumber){
+                                values[col] = apexGridUtils.normalizeNumber(model.getValue(record, col));
+                            }else{
+                                values[col] = model.getValue(record, col);
+                            }
+                            
                         });
 
                         // Calcular el nuevo valor usando la fórmula
                         let result = config.formula(values, record, index);
 
                         // Redondear a los decimales indicados
-                        const decimalPlaces = config.decimalPlaces || 2;
-                        result = parseFloat(Number(result).toFixed(decimalPlaces));
+                        const decimalPlaces = config.decimalPlaces || 6;
+                        //result = parseFloat(Number(result).toFixed(decimalPlaces));
 
                         // Setear el valor en la columna destino
                         model.setValue(record, config.targetColumn, result);
 
-                        // Marcar como dirty si corresponde
+                        // Marcar como dirty y commit para que APEX sepa que el registro fue modificado
                         if (model.markDirty) model.markDirty(record);
+                        if (model.commitRecord) model.commitRecord(record);
 
                         processedRows++;
                         
@@ -4944,6 +5191,207 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
      */
     function setAllRowsFixed(gridStaticId, targetColumn, value, options) {
         return setAllRowsValue(gridStaticId, targetColumn, value, options || {});
+    }
+
+    /**
+     * Recalcula todas las filas usando un proceso APEX asíncrono por fila (versión simple).
+     * @param {string} gridStaticId - Static ID del Interactive Grid
+     * @param {object} config - Configuración del proceso asíncrono
+     * @param {array} config.sourceColumns - Columnas fuente para construir parámetros (ej: ['COD_ANIMAL', 'PESO_LIQUIDACION'])
+     * @param {string} config.targetColumn - Columna donde se guarda el resultado
+     * @param {string} config.serverProcess - Nombre del proceso APEX (ej: "GET_PRECIO_ESCALA")
+     * @param {array} config.serverProcessParams - Parámetros adicionales del servidor (ej: ['P1194_COD_EMPRESA', 'P1194_FEC_MOVIMIENTO'])
+     * @param {function} config.formula - Función que procesa la respuesta: (result, values, record, index) => valor
+     * @param {number} config.decimalPlaces - Decimales para formatear resultado (default: 2)
+     * @param {number} config.delay - Delay entre llamadas en ms (default: 50)
+     * @param {boolean} config.showSpinner - Mostrar spinner durante el proceso (default: true)
+     * @param {number} config.maxConcurrent - Máximo de llamadas concurrentes (default: 5)
+     * @param {function} config.onComplete - Callback al finalizar: (completed, errors) => void
+     * @param {function} config.onError - Callback de error por fila: (error, record, index) => void
+     * @param {boolean} config.onlyEditable - Solo filas editables (default: true)
+     * @param {function} config.processValue - Función para procesar valores: (value, columnName, record, index, model) => processedValue
+     * @returns {Promise<boolean>} - true si se inició correctamente
+     */
+    function recalculateAllRowsAsync(gridStaticId, config) {
+        return new Promise((resolve) => {
+            try {
+                config = config || {};
+                const sourceColumns = config.sourceColumns || [];
+                const targetColumn = config.targetColumn;
+                const serverProcess = config.serverProcess;
+                const serverProcessParams = config.serverProcessParams || [];
+                const formula = config.formula;
+                const decimalPlaces = config.decimalPlaces || 2;
+                const delay = config.delay || 50;
+                const showSpinner = config.showSpinner !== false; // default true
+                const maxConcurrent = config.maxConcurrent || 5;
+                const onlyEditable = config.onlyEditable !== false; // default true
+                const onComplete = config.onComplete || (() => {});
+                const onError = config.onError || ((err, record, index) => {
+                    console.error(`apexGridUtils: Error en fila ${index}:`, err);
+                });
+                const processValue = config.processValue || ((value, columnName, record, index, model) => value);
+
+                const region = apex.region(gridStaticId);
+                const $ig = region && region.widget ? region.widget() : null;
+                if (!$ig) {
+                    console.error('apexGridUtils: No se encontró la región IG con Static ID:', gridStaticId);
+                    resolve(false);
+                    return;
+                }
+                const grid = $ig.interactiveGrid('getViews', 'grid');
+                const model = grid && grid.model ? grid.model : null;
+                if (!model) {
+                    console.error('apexGridUtils: No se pudo obtener el modelo del IG:', gridStaticId);
+                    resolve(false);
+                    return;
+                }
+
+                let spinner$ = null;
+                if (showSpinner) {
+                    try { spinner$ = apex.util.showSpinner(); } catch(e) { /* noop */ }
+                }
+
+                // Recolectar filas válidas
+                const validRecords = [];
+                model.forEach(function(record, index, id) {
+                    if (isRecordMarkedForDeletion(record, model)) return;
+                    if (onlyEditable && model.allowEdit && !model.allowEdit(record)) return;
+                    validRecords.push({ record, index, id });
+                });
+
+                if (validRecords.length === 0) {
+                    if (spinner$) { try { spinner$.remove(); } catch(e) { /* noop */ } }
+                    console.log('apexGridUtils: No hay filas válidas para procesar');
+                    resolve(true);
+                    return;
+                }
+
+                let completed = 0;
+                let errors = 0;
+                let activeCalls = 0;
+                let currentIndex = 0;
+
+                const processNext = () => {
+                    if (currentIndex >= validRecords.length) return;
+                    if (activeCalls >= maxConcurrent) return;
+
+                    const { record, index, id } = validRecords[currentIndex++];
+                    activeCalls++;
+
+                    try {
+                        // Construir objeto de valores fuente (igual que recalculateAllRows)
+                        const values = {};
+                        sourceColumns.forEach(column => {
+                            const rawValue = model.getValue(record, column);
+                            const processedValue = processValue(rawValue, column, record, index, model);
+                            values[column] = processedValue;
+                        });
+                        
+                        // Construir parámetros para el server process (solo serverProcessParams, no sourceColumns)
+                        const params = {};
+                        
+                        // Solo agregar parámetros del servidor (como en tu código original)
+                        serverProcessParams.forEach((param, i) => {
+                            let value = param;
+                            
+                            if (typeof param === 'string') {
+                                if (param.startsWith('GRID:')) {
+                                    // Columna del grid: GRID:ACTIVO
+                                    const columnName = param.substring(5);
+                                    value = model.getValue(record, columnName);
+                                } else if (param.startsWith('ITEM:')) {
+                                    // Item de página: ITEM:P1194_COD_EMPRESA
+                                    const itemName = param.substring(5);
+                                    value = $v(itemName);
+                                } else if (param.startsWith('P') && param.match(/^P\d+_/)) {
+                                    // Item de página (compatibilidad): P1194_COD_EMPRESA (patrón P + números + _)
+                                    value = $v(param);
+                                }
+                                // Si no tiene prefijo, se usa como valor directo
+                                // PUNTOS, ACTIVO, etc. se tratan como valores directos
+                            }
+                            
+                            params[`x${String(i + 1).padStart(2, '0')}`] = value;
+                        });
+
+                        // Verificar si hay datos válidos para procesar
+                        const hasValidData = sourceColumns.some(column => {
+                            const value = model.getValue(record, column);
+                            return value !== null && value !== undefined && value !== '';
+                        });
+
+                        if (!hasValidData) {
+                            activeCalls--;
+                            completed++;
+                            processNext();
+                            return;
+                        }
+
+                        apex.server.process(serverProcess, params, {
+                            success: function(result) {
+                                try {
+                                    let finalValue = result;
+                                    
+                                    // Si hay fórmula personalizada, usarla para procesar el resultado (igual que recalculateAllRows)
+                                    if (formula && typeof formula === 'function') {
+                                        finalValue = formula(result, values, record, index);
+                                    }
+                                    
+                                    // Formatear con decimales si es número
+                                    if (typeof finalValue === 'number' && decimalPlaces !== null) {
+                                        finalValue = parseFloat(Number(finalValue).toFixed(decimalPlaces));
+                                    }
+                                    
+                                    // Setear el resultado en la columna destino
+                                    model.setValue(record, targetColumn, finalValue);
+                                } catch (e) {
+                                    onError(e, record, index);
+                                    errors++;
+                                }
+                                activeCalls--;
+                                completed++;
+                                checkComplete();
+                                setTimeout(processNext, delay);
+                            },
+                            error: function(err) {
+                                onError(err, record, index);
+                                errors++;
+                                activeCalls--;
+                                completed++;
+                                checkComplete();
+                                setTimeout(processNext, delayBetweenCalls);
+                            }
+                        });
+                    } catch (e) {
+                        onError(e, record, index);
+                        errors++;
+                        activeCalls--;
+                        completed++;
+                        checkComplete();
+                        setTimeout(processNext, delayBetweenCalls);
+                    }
+                };
+
+                const checkComplete = () => {
+                    if (completed >= validRecords.length) {
+                        if (spinner$) { try { spinner$.remove(); } catch(e) { /* noop */ } }
+                        console.log(`apexGridUtils: recalculateAllRowsAsync completado. Procesadas=${completed}, Errores=${errors}`);
+                        try { onComplete(completed, errors); } catch(e) { /* noop */ }
+                        resolve(true);
+                    }
+                };
+
+                // Iniciar procesamiento
+                for (let i = 0; i < Math.min(maxConcurrent, validRecords.length); i++) {
+                    setTimeout(processNext, i * delay);
+                }
+
+            } catch (error) {
+                console.error('apexGridUtils recalculateAllRowsAsync error:', error);
+                resolve(false);
+            }
+        });
     }
 
     /**
@@ -5538,6 +5986,347 @@ function setFirstNumericCellValueWithCommit(gridStaticId, columnName, value, dec
         }
     }
 
-   
+    /**
+     * Obtiene datos de las filas seleccionadas, aplica una fórmula opcional y retorna el resultado.
+     * @param {string} gridStaticId - Static ID del Interactive Grid.
+     * @param {object} config - Configuración.
+     * @param {array} config.sourceColumns - Columnas a obtener de las filas seleccionadas.
+     * @param {function} config.formula - Función que recibe (values, record, index) y retorna el valor calculado.
+     * @param {number} config.decimalPlaces - Decimales para formatear resultado (opcional).
+     * @param {boolean} config.autoTrigger - Si debe actualizarse automáticamente al cambiar selección (default: true).
+     * @returns {any} - Resultado de la fórmula o null si no hay filas seleccionadas.
+     */
+    function getSelectedRows(gridStaticId, config) {
+        try {
+            config = config || {};
+            const sourceColumns = config.sourceColumns || [];
+            const formula = config.formula;
+            const decimalPlaces = config.decimalPlaces;
+            const autoTrigger = config.autoTrigger !== false; // default true
+
+            if (!sourceColumns || sourceColumns.length === 0) {
+                console.error('apexGridUtils: sourceColumns es requerido en getSelectedRows');
+                return null;
+            }
+
+            // Obtener el grid y modelo
+            const region = apex.region(gridStaticId);
+            const $ig = region && region.widget ? region.widget() : null;
+            if (!$ig) {
+                console.error('apexGridUtils: No se encontró la región IG con Static ID:', gridStaticId);
+                return null;
+            }
+
+            const grid = $ig.interactiveGrid('getViews', 'grid');
+            const model = grid && grid.model ? grid.model : null;
+            if (!model) {
+                console.error('apexGridUtils: No se pudo obtener el modelo del IG:', gridStaticId);
+                return null;
+            }
+
+            // Función para obtener datos de las filas seleccionadas
+            const getSelectedRowsData = function() {
+                try {
+                    const selectedRecords = grid.getSelectedRecords && grid.getSelectedRecords();
+                    if (!selectedRecords || selectedRecords.length === 0) {
+                        return null;
+                    }
+
+                    // Recolectar datos de todas las filas seleccionadas
+                    const rowsData = [];
+                    selectedRecords.forEach(function(record, index) {
+                        const rowValues = {};
+                        sourceColumns.forEach(function(column) {
+                            const rawValue = model.getValue(record, column);
+                            // Manejar Popup LOV
+                            const value = (rawValue && typeof rawValue === 'object' && (rawValue.v !== undefined || rawValue.d !== undefined))
+                                ? rawValue.v
+                                : rawValue;
+                            rowValues[column] = normalizeNumber(value);
+                        });
+                        rowsData.push({
+                            record: record,
+                            index: index,
+                            values: rowValues
+                        });
+                    });
+
+                    // Si hay fórmula, aplicarla
+                    if (formula && typeof formula === 'function') {
+                        let result = null;
+                        // La fórmula puede procesar todas las filas acumulativamente
+                        // Pasamos cada fila individualmente para permitir acumulación en la fórmula
+                        rowsData.forEach(function(rowData, idx) {
+                            const formulaResult = formula(rowData.values, rowData.record, idx);
+                            // Si la fórmula retorna un valor, usarlo (útil para acumulaciones)
+                            if (formulaResult !== undefined && formulaResult !== null) {
+                                result = formulaResult;
+                            }
+                        });
+                        
+                        // La fórmula recibe values como objeto con las columnas como propiedades
+                        // Ejemplo: values.COSTO_DOLARES o values['COSTO_DOLARES']
+                        
+                        // Formatear con decimales si es necesario
+                        if (result !== null && result !== undefined && typeof result === 'number' && decimalPlaces !== undefined) {
+                            result = parseFloat(Number(result).toFixed(decimalPlaces));
+                        }
+                        
+                        return result;
+                    } else {
+                        // Si no hay fórmula, retornar el array de datos
+                        return rowsData;
+                    }
+                } catch (e) {
+                    console.error('apexGridUtils: Error obteniendo datos de filas seleccionadas:', e);
+                    return null;
+                }
+            };
+
+            // Si autoTrigger está habilitado, configurar listener
+            if (autoTrigger) {
+                const listenerId = 'getSelectedRows_' + gridStaticId + '_' + sourceColumns.join('_');
+                
+                // Limpiar listener previo
+                if ($ig && $ig.off) {
+                    $ig.off('interactivegridselectionchange.' + listenerId);
+                }
+
+                // Configurar listener de cambio de selección
+                if ($ig && $ig.on) {
+                    $ig.on('interactivegridselectionchange.' + listenerId, function(event, ui) {
+                        try {
+                            // Ejecutar la función cuando cambia la selección
+                            getSelectedRowsData();
+                        } catch (e) {
+                            console.error('apexGridUtils: Error en listener de getSelectedRows:', e);
+                        }
+                    });
+                }
+            }
+
+            // Ejecutar inicialmente y retornar resultado
+            return getSelectedRowsData();
+
+        } catch (error) {
+            console.error('apexGridUtils: Error en getSelectedRows:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Obtiene datos de las filas seleccionadas y los guarda en un item de página.
+     * @param {string} gridStaticId - Static ID del Interactive Grid.
+     * @param {object} config - Configuración.
+     * @param {array} config.sourceColumns - Columnas a obtener de las filas seleccionadas.
+     * @param {string} config.targetItem - Item de página donde guardar el resultado.
+     * @param {function} config.formula - Función opcional que recibe (values, record, index) y retorna el valor calculado.
+     * @param {number} config.decimalPlaces - Decimales para formatear resultado (opcional).
+     * @param {boolean} config.autoTrigger - Si debe actualizarse automáticamente al cambiar selección (default: true).
+     * @returns {boolean} - true si se configuró correctamente.
+     */
+    function getSelectedRowsToItem(gridStaticId, config) {
+        try {
+            config = config || {};
+            const sourceColumns = config.sourceColumns || [];
+            const targetItem = config.targetItem;
+            const formula = config.formula;
+            const decimalPlaces = config.decimalPlaces;
+            const autoTrigger = config.autoTrigger !== false; // default true
+
+            if (!sourceColumns || sourceColumns.length === 0) {
+                console.error('apexGridUtils: sourceColumns es requerido en getSelectedRowsToItem');
+                return false;
+            }
+
+            if (!targetItem) {
+                console.error('apexGridUtils: targetItem es requerido en getSelectedRowsToItem');
+                return false;
+            }
+
+            // Obtener el grid y modelo
+            const region = apex.region(gridStaticId);
+            const $ig = region && region.widget ? region.widget() : null;
+            if (!$ig) {
+                console.error('apexGridUtils: No se encontró la región IG con Static ID:', gridStaticId);
+                return false;
+            }
+
+            const grid = $ig.interactiveGrid('getViews', 'grid');
+            const model = grid && grid.model ? grid.model : null;
+            if (!model) {
+                console.error('apexGridUtils: No se pudo obtener el modelo del IG:', gridStaticId);
+                return false;
+            }
+
+            // Función para actualizar el item con datos de las filas seleccionadas
+            const updateItemFromSelectedRows = function() {
+                try {
+                    const selectedRecords = grid.getSelectedRecords && grid.getSelectedRecords();
+                    if (!selectedRecords || selectedRecords.length === 0) {
+                        // Si no hay filas seleccionadas, limpiar el item
+                        if (window.apex && apex.item && typeof apex.item(targetItem).setValue === 'function') {
+                            apex.item(targetItem).setValue('');
+                        } else if (typeof $s === 'function') {
+                            $s(targetItem, '');
+                        }
+                        return;
+                    }
+
+                    // Recolectar datos de todas las filas seleccionadas
+                    const rowsData = [];
+                    selectedRecords.forEach(function(record, index) {
+                        const rowValues = {};
+                        sourceColumns.forEach(function(column) {
+                            const rawValue = model.getValue(record, column);
+                            // Manejar Popup LOV
+                            const value = (rawValue && typeof rawValue === 'object' && (rawValue.v !== undefined || rawValue.d !== undefined))
+                                ? rawValue.v
+                                : rawValue;
+                            rowValues[column] = normalizeNumber(value);
+                        });
+                        rowsData.push({
+                            record: record,
+                            index: index,
+                            values: rowValues
+                        });
+                    });
+
+                    // Calcular valor final
+                    let finalValue = null;
+
+                    if (formula && typeof formula === 'function') {
+                        // Si hay fórmula, aplicarla a cada fila y usar el último resultado
+                        rowsData.forEach(function(rowData, idx) {
+                            const formulaResult = formula(rowData.values, rowData.record, idx);
+                            if (formulaResult !== undefined && formulaResult !== null) {
+                                finalValue = formulaResult;
+                            }
+                        });
+                    } else {
+                        // Si no hay fórmula, usar la primera columna de la primera fila
+                        if (rowsData.length > 0 && sourceColumns.length > 0) {
+                            finalValue = rowsData[0].values[sourceColumns[0]];
+                        }
+                    }
+
+                    // Formatear con decimales si es necesario
+                    if (finalValue !== null && finalValue !== undefined && typeof finalValue === 'number' && decimalPlaces !== undefined) {
+                        finalValue = parseFloat(Number(finalValue).toFixed(decimalPlaces));
+                    }
+
+                    // Guardar en el item
+                    if (window.apex && apex.item && typeof apex.item(targetItem).setValue === 'function') {
+                        apex.item(targetItem).setValue(finalValue !== null && finalValue !== undefined ? finalValue : '');
+                    } else if (typeof $s === 'function') {
+                        $s(targetItem, finalValue !== null && finalValue !== undefined ? finalValue : '');
+                    }
+
+                } catch (e) {
+                    console.error('apexGridUtils: Error actualizando item desde filas seleccionadas:', e);
+                }
+            };
+
+            // Si autoTrigger está habilitado, configurar listener
+            if (autoTrigger) {
+                const listenerId = 'getSelectedRowsToItem_' + gridStaticId + '_' + targetItem;
+                
+                // Limpiar listener previo
+                if ($ig && $ig.off) {
+                    $ig.off('interactivegridselectionchange.' + listenerId);
+                }
+
+                // Configurar listener de cambio de selección
+                if ($ig && $ig.on) {
+                    $ig.on('interactivegridselectionchange.' + listenerId, function(event, ui) {
+                        try {
+                            updateItemFromSelectedRows();
+                        } catch (e) {
+                            console.error('apexGridUtils: Error en listener de getSelectedRowsToItem:', e);
+                        }
+                    });
+                }
+            }
+
+            // Ejecutar inicialmente
+            setTimeout(function() {
+                updateItemFromSelectedRows();
+            }, 100);
+
+            return true;
+
+        } catch (error) {
+            console.error('apexGridUtils: Error en getSelectedRowsToItem:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Agrega un título al header de un Interactive Grid.
+     * 
+     * @param {string} gridId - El ID estático de la región del Interactive Grid (regionId).
+     * @param {string} title - El título que se mostrará en el header del grid.
+     * 
+     * @example
+     * addTitleToGrid('Comprobantes', 'Comprobantes');
+     */
+    function addTitleToGrid(gridId, title) {
+        try {
+            if (!gridId || typeof gridId !== 'string') {
+                throw new Error('gridId es obligatorio y debe ser una cadena de texto');
+            }
+            if (!title || typeof title !== 'string') {
+                throw new Error('title es obligatorio y debe ser una cadena de texto');
+            }
+
+            // Obtener el elemento del grid usando jQuery
+            // El ID del elemento del grid es {gridId}_ig
+            var gridElementId = gridId + '_ig';
+            var $grid = apex.jQuery('#' + gridElementId);
+
+            if ($grid.length === 0) {
+                throw new Error('No se encontró el Interactive Grid con ID: ' + gridElementId);
+            }
+
+            // Buscar el div con clase a-IG-header dentro del grid
+            var $header = $grid.find('.a-IG-header');
+
+            if ($header.length === 0) {
+                // Si no existe el header, intentar crearlo
+                // El header normalmente está al inicio del grid
+                $header = apex.jQuery('<div class="a-IG-header"></div>');
+                $grid.prepend($header);
+            }
+
+            // Buscar si ya existe un span con la clase titleGridAux
+            var $existingTitle = $header.find('span.titleGridAux');
+
+            if ($existingTitle.length > 0) {
+                // Si ya existe, actualizar el contenido
+                $existingTitle.text(title);
+            } else {
+                // Si no existe, crear el span y agregarlo al inicio del header
+                var $titleSpan = apex.jQuery('<span class="titleGridAux"></span>');
+                $titleSpan.text(title);
+                $header.prepend($titleSpan);
+            }
+
+            console.log('addTitleToGrid: Título agregado correctamente al grid ' + gridId);
+            return true;
+
+        } catch (error) {
+            console.error('addTitleToGrid: Error al agregar título al grid:', error);
+            throw error;
+        }
+    }
+
+// =============================================================================
+// EXPORTAR FUNCIONES GLOBALES A LA API PÚBLICA
+// =============================================================================
+// Agregar funciones globales al objeto apexUtils para mantener consistencia con la API pública
+apexUtils.habilitarEdicion = habilitarEdicion;
+apexUtils.extraerDatosIG = extraerDatosIG;
+apexUtils.extraerDatos = extraerDatos;
+apexUtils.addTitleToGrid = addTitleToGrid;
 
     
