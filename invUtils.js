@@ -33,6 +33,38 @@
  * ```
  */
 
+
+function customAlert(status, mensaje){
+    
+    var v_status = status;
+    var v_manesaje = mensaje;
+
+    const success_alertOptions = {
+        title: "Proceso Concluido",
+        style: "success",
+        iconClasses: "fa fa-info-circle",
+        okLabel: "Aceptar",
+    };
+
+    const error_alertOptions = {
+        title: "Error",
+        style: "danger",
+        iconClasses: "fa fa-warning",
+        okLabel: "Aceptar",
+    };
+
+    console.log("status : " + v_status);
+
+    if (200 <= v_status && v_status <= 299){
+        console.log("Success alert!");
+        apex.message.alert(v_manesaje,null,success_alertOptions);
+    }else{
+        console.log("Error alert!");
+        apex.message.alert(v_manesaje,null,error_alertOptions);
+    }
+    return true;
+}
+
 function habilitarEdicion(regionId) {
     try {
         var region = apex.region(regionId);
