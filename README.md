@@ -18,6 +18,8 @@ Una biblioteca completa de utilidades para trabajar con Interactive Grids y elem
 - **`getCurrentRow()`** - Obtiene múltiples campos de la fila con foco como objeto
 - **`getCellValue()`** - Obtiene valor de celda específica por fila y columna
 - **`getNumericCellValue()`** - Obtiene valor numérico con normalización de formato europeo
+- **`getSelectedRows()`** - Obtiene datos de las filas seleccionadas y aplica una fórmula opcional
+- **`getSelectedRowsToItem()`** - Obtiene datos de las filas seleccionadas, aplica una fórmula y guarda el resultado en un item
 
 ### ✏️ Establecer Valores
 - **`setSelectedCellValue()`** - Establece valor en la celda seleccionada
@@ -26,6 +28,7 @@ Una biblioteca completa de utilidades para trabajar con Interactive Grids y elem
 
 ### 🧮 Sumas y Totales
 - **`sumColumnToItem()`** - Suma todos los valores de una columna y los coloca en un item
+- **`sumColumnToItemWithCondition()`** - Suma valores de una columna aplicando condiciones sobre otra columna
 - **`sumTotalToItem()`** - Suma la columna TOTAL a un item específico
 
 ### 🎯 Navegación
@@ -204,9 +207,51 @@ habilitarEdicion('mi_grid_region');
 
 **Retorna:** `boolean` - true si se habilitó correctamente
 
+### addTitleToGrid(gridId, title)
+
+Agrega un título al header de un Interactive Grid. Inserta un elemento `<span>` con el título especificado y la clase `titleGridAux` en el header del grid.
+
+```javascript
+// Agregar título a un grid
+addTitleToGrid('Comprobantes', 'Comprobantes');
+
+// Agregar título personalizado
+addTitleToGrid('IG_PRODUCTOS', 'Lista de Productos');
+```
+
+**Parámetros:**
+- `gridId` (string): El ID estático de la región del Interactive Grid (regionId)
+- `title` (string): El título que se mostrará en el header del grid
+
+**Retorna:** `boolean` - true si se agregó correctamente
+
+**Características:**
+- ✅ Busca automáticamente el elemento del grid usando el ID `{gridId}_ig`
+- ✅ Encuentra o crea el div con clase `a-IG-header` si no existe
+- ✅ Si ya existe un título, lo actualiza en lugar de duplicarlo
+- ✅ Inserta el span con la clase `titleGridAux` al inicio del header
+- ✅ Manejo robusto de errores con mensajes informativos
+
+**Ejemplo de uso:**
+```javascript
+// En el evento Page Load o After Refresh
+addTitleToGrid('Comprobantes', 'Comprobantes');
+
+// El resultado será un span con el título en el header:
+// <div class="a-IG-header">
+//   <span class="titleGridAux">Comprobantes</span>
+//   ...
+// </div>
+```
+
+**Notas:**
+- El ID del elemento del grid debe seguir el patrón `{gridId}_ig`
+- Si el header no existe, se crea automáticamente
+- Si ya existe un span con la clase `titleGridAux`, se actualiza su contenido
+
 ### extraerDatosIG(configuracion)
 
-Extrae datos de un Interactive Grid con configuración avanzada.
+Extrae datos de un Interactive Grid con configuración avanzada. **Ignora automáticamente los registros marcados para eliminación.**
 
 ```javascript
 // Configuración básica
@@ -219,6 +264,14 @@ extraerDatosIG({
     ],
     campoDestino: 'P1_DATOS_EXTRAIDOS',
     formatoSalida: 'array' // 'array' o 'json'
+});
+
+// Obtener TODOS los campos automáticamente (nuevo)
+extraerDatosIG({
+    regionId: 'mi_grid',
+    campos: [], // Array vacío o null para obtener todos los campos
+    campoDestino: 'P1_DATOS_EXTRAIDOS',
+    formatoSalida: 'json'
 });
 
 // Con transformación de datos
@@ -235,23 +288,63 @@ extraerDatosIG({
     ],
     campoDestino: 'P1_FECHAS'
 });
+
+// Con alias en mayúsculas (nuevo)
+extraerDatosIG({
+    regionId: 'mi_grid',
+    campos: ['COD_ATRIBUTO', 'CANT_CABEZAS', 'TIP_PRECIO_VENTA'],
+    campoDestino: 'P1_DATOS',
+    uppercase: true  // Los alias serán: COD_ATRIBUTO, CANT_CABEZAS, TIP_PRECIO_VENTA
+});
 ```
 
 **Parámetros:**
 - `configuracion.regionId` (string): ID de la región del grid
-- `configuracion.campos` (array): Array de objetos con configuración de campos
+- `configuracion.campos` (array, opcional): Array de objetos con configuración de campos o array de strings. Si es `null`, `undefined` o array vacío, obtiene automáticamente **todas las columnas** del modelo
 - `configuracion.campoDestino` (string): ID del item donde guardar los datos
-- `configuracion.formatoSalida` (string): 'array' o 'json' (opcional)
+- `configuracion.formatoSalida` (string): 'array' o 'json' (opcional, default: 'json')
+- `configuracion.uppercase` (boolean, opcional): Si es `true`, los alias de los campos se generan en mayúsculas. Por defecto `false` (minúsculas) para mantener retrocompatibilidad
 - `configuracion.callback` (function): Función a ejecutar después de la extracción (opcional)
 
-### extraerDatos(regionId, campos, campoDestino)
+**Características:**
+- ✅ Ignora automáticamente los registros marcados para eliminación
+- ✅ Si no se especifican campos, obtiene automáticamente todas las columnas del Interactive Grid
+- ✅ Cuando se obtienen todos los campos automáticamente, `obligatorio` se establece en `false` por defecto
+- ✅ Soporta alias en mayúsculas o minúsculas según el parámetro `uppercase`
 
-Versión simplificada de extraerDatosIG.
+### extraerDatos(regionId, campos, campoDestino, uppercase)
+
+Versión simplificada de extraerDatosIG. **Ignora automáticamente los registros marcados para eliminación.**
 
 ```javascript
-// Extracción simple
+// Extracción simple con campos específicos (alias en minúsculas por defecto)
 extraerDatos('mi_grid', ['ID', 'NOMBRE', 'EMAIL'], 'P1_DATOS');
+// Resultado: {id: ..., nombre: ..., email: ...}
+
+// Con alias en mayúsculas (nuevo)
+extraerDatos('mi_grid', ['COD_ATRIBUTO', 'CANT_CABEZAS', 'TIP_PRECIO_VENTA'], 'P1_DATOS', true);
+// Resultado: {COD_ATRIBUTO: ..., CANT_CABEZAS: ..., TIP_PRECIO_VENTA: ...}
+
+// Obtener TODOS los campos automáticamente
+extraerDatos('mi_grid', null, 'P1_DATOS');
+// o
+extraerDatos('mi_grid', [], 'P1_DATOS');
+
+// Obtener todos los campos con alias en mayúsculas
+extraerDatos('mi_grid', [], 'P1_DATOS', true);
 ```
+
+**Parámetros:**
+- `regionId` (string): ID de la región del grid
+- `campos` (array, opcional): Array de nombres de campos (strings) o `null`/`[]` para obtener todos los campos automáticamente
+- `campoDestino` (string): ID del item donde guardar los datos
+- `uppercase` (boolean, opcional): Si es `true`, los alias de los campos se generan en mayúsculas. Por defecto `false` (minúsculas) para mantener retrocompatibilidad
+
+**Características:**
+- ✅ Ignora automáticamente los registros marcados para eliminación
+- ✅ Si `campos` es `null`, `undefined` o array vacío, obtiene automáticamente todas las columnas del Interactive Grid
+- ✅ Soporta alias en mayúsculas o minúsculas según el parámetro `uppercase`
+- ✅ **Retrocompatible**: El código existente sin el parámetro `uppercase` sigue funcionando igual (alias en minúsculas)
 
 ## 🎯 APEX Grid Utils
 
@@ -486,6 +579,296 @@ apexGridUtils.setupGridListener('mi_grid', function() {
     sumaConfig.calculateSum();
 }, ['set', 'add', 'delete', 'reset']);
 ```
+
+### Sumas con Condiciones - sumColumnToItemWithCondition()
+
+Suma los valores de una columna del Interactive Grid aplicando una condición basada en otra columna.
+
+#### Parámetros
+
+| Parámetro | Tipo | Default | Descripción |
+|-----------|------|---------|-------------|
+| `gridStaticId` | string | - | Static ID del Interactive Grid |
+| `columnName` | string | - | Nombre de la columna a sumar |
+| `targetItem` | string | - | ID del item de APEX donde colocar el resultado |
+| `conditionConfig` | object | - | Configuración de la condición (ver tabla abajo) |
+| `decimalPlaces` | number | 2 | Número de decimales |
+| `autoUpdate` | boolean | true | Actualizar automáticamente cuando cambie el grid |
+
+#### Operadores disponibles
+
+| Operador | Descripción | Requiere `value` |
+|----------|-------------|------------------|
+| `isNull` | Es null, undefined o vacío | No |
+| `isNotNull` | No es null, undefined ni vacío | No |
+| `equals` | Igual a (comparación flexible ==) | Sí |
+| `strictEquals` | Igual a (comparación estricta ===) | Sí |
+| `notEquals` | Diferente de | Sí |
+| `greaterThan` | Mayor que | Sí |
+| `greaterOrEqual` | Mayor o igual que | Sí |
+| `lessThan` | Menor que | Sí |
+| `lessOrEqual` | Menor o igual que | Sí |
+| `in` | Está en una lista de valores | Sí (array) |
+| `notIn` | No está en una lista de valores | Sí (array) |
+| `contains` | Contiene texto (case insensitive) | Sí |
+| `startsWith` | Empieza con texto (case insensitive) | Sí |
+| `endsWith` | Termina con texto (case insensitive) | Sí |
+| `between` | Está entre dos valores | Sí (array [min, max]) |
+| `custom` | Función personalizada | No (usa `customFn`) |
+
+#### Ejemplos de uso
+
+```javascript
+// 1. Sumar TOTAL donde ESTADO es NULL
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'ESTADO',
+    operator: 'isNull'
+});
+
+// 2. Sumar TOTAL donde ESTADO NO es NULL
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'ESTADO',
+    operator: 'isNotNull'
+});
+
+// 3. Sumar TOTAL donde ESTADO es igual a 'ACTIVO'
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'ESTADO',
+    operator: 'equals',
+    value: 'ACTIVO'
+});
+
+// 4. Sumar TOTAL donde CODIGO es igual a 100
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CODIGO',
+    operator: 'equals',
+    value: 100
+});
+
+// 5. Sumar TOTAL donde CANTIDAD es mayor a 10
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CANTIDAD',
+    operator: 'greaterThan',
+    value: 10
+});
+
+// 6. Sumar TOTAL donde CANTIDAD es mayor o igual a 10
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CANTIDAD',
+    operator: 'greaterOrEqual',
+    value: 10
+});
+
+// 7. Sumar TOTAL donde CANTIDAD es menor a 100
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CANTIDAD',
+    operator: 'lessThan',
+    value: 100
+});
+
+// 8. Sumar TOTAL donde TIPO está en una lista de valores
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'TIPO',
+    operator: 'in',
+    value: ['A', 'B', 'C']
+});
+
+// 9. Sumar TOTAL donde TIPO NO está en una lista de valores
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'TIPO',
+    operator: 'notIn',
+    value: ['X', 'Y', 'Z']
+});
+
+// 10. Sumar TOTAL donde PRECIO está entre 50 y 200
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'PRECIO',
+    operator: 'between',
+    value: [50, 200]
+});
+
+// 11. Sumar TOTAL donde DESCRIPCION contiene 'urgente'
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'DESCRIPCION',
+    operator: 'contains',
+    value: 'urgente'
+});
+
+// 12. Sumar TOTAL donde CODIGO empieza con 'PRD'
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'CODIGO',
+    operator: 'startsWith',
+    value: 'PRD'
+});
+
+// 13. Condición personalizada (múltiples columnas)
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    operator: 'custom',
+    customFn: function(record, model) {
+        const cantidad = model.getValue(record, 'CANTIDAD');
+        const estado = model.getValue(record, 'ESTADO');
+        // Sumar solo si cantidad > 5 Y estado es ACTIVO
+        return cantidad > 5 && estado === 'ACTIVO';
+    }
+});
+
+// 14. Condición personalizada compleja con OR
+apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    operator: 'custom',
+    customFn: function(record, model) {
+        const estado = model.getValue(record, 'ESTADO');
+        const prioridad = model.getValue(record, 'PRIORIDAD');
+        // Sumar si estado es null O prioridad es 'ALTA'
+        return (estado === null || estado === '') || prioridad === 'ALTA';
+    }
+});
+
+// 15. Usar con menos decimales y sin auto-actualización
+let resultado = apexGridUtils.sumColumnToItemWithCondition('mi_grid', 'TOTAL', 'P1_SUMA', {
+    column: 'ESTADO',
+    operator: 'equals',
+    value: 'PENDIENTE'
+}, 0, false);  // 0 decimales, sin auto-update
+
+// El resultado incluye información adicional
+console.log(resultado.sum);             // Valor de la suma
+console.log(resultado.matchingRecords); // Número de registros que cumplieron la condición
+resultado.calculateSum();               // Recalcular manualmente
+```
+
+#### Objeto de retorno
+
+La función retorna un objeto con las siguientes propiedades:
+
+```javascript
+{
+    sum: 1500.00,           // Valor calculado de la suma
+    matchingRecords: 5,      // Número de registros que cumplieron la condición
+    calculateSum: function,  // Función para recalcular manualmente
+    gridStaticId: 'mi_grid',
+    columnName: 'TOTAL',
+    targetItem: 'P1_SUMA',
+    conditionConfig: {...}   // Configuración de condición usada
+}
+```
+
+### Filas Seleccionadas: Lectura y Cálculo
+
+#### getSelectedRows(gridStaticId, config)
+
+Obtiene los datos de las filas seleccionadas del IG y, opcionalmente, aplica una fórmula para devolver un único resultado calculado.
+
+```javascript
+// Ejemplo 1: Obtener los datos "en bruto" de las filas seleccionadas
+const filas = apexGridUtils.getSelectedRows('IG_DETALLE', {
+    sourceColumns: ['COD_ANIMAL', 'COSTO_DOLARES']
+});
+console.log(filas);
+// filas es un array de objetos:
+// [
+//   { record, index, values: { COD_ANIMAL: ..., COSTO_DOLARES: ... } },
+//   ...
+// ]
+
+// Ejemplo 2: Sumar COSTO_DOLARES de las filas seleccionadas
+const totalSeleccionado = apexGridUtils.getSelectedRows('IG_DETALLE', {
+    sourceColumns: ['COSTO_DOLARES'],
+    decimalPlaces: 2,
+    formula: function(values, record, index) {
+        // values contiene solo las columnas indicadas en sourceColumns
+        // esta función se ejecuta por cada fila seleccionada
+        if (!this.acumulador) {
+            this.acumulador = 0;
+        }
+        const costo = parseFloat(values.COSTO_DOLARES) || 0;
+        this.acumulador += costo;
+        return this.acumulador; // el último valor retornado será el resultado final
+    }
+});
+console.log('Total seleccionado:', totalSeleccionado);
+
+// Ejemplo 3: Varias columnas con montos (COSTO_DOLARES_1 ... COSTO_DOLARES_10)
+const totalMultiCols = apexGridUtils.getSelectedRows('IG_DETALLE', {
+    sourceColumns: [
+        'COSTO_DOLARES_1',
+        'COSTO_DOLARES_2',
+        'COSTO_DOLARES_3',
+        'COSTO_DOLARES_4',
+        'COSTO_DOLARES_5',
+        'COSTO_DOLARES_6',
+        'COSTO_DOLARES_7',
+        'COSTO_DOLARES_8',
+        'COSTO_DOLARES_9',
+        'COSTO_DOLARES_10'
+    ],
+    decimalPlaces: 2,
+    formula: function(values, record, index) {
+        if (!this.total) {
+            this.total = 0;
+        }
+        Object.keys(values).forEach(function(col) {
+            const v = parseFloat(values[col]) || 0;
+            this.total += v;
+        }, this);
+        return this.total;
+    }
+});
+console.log('Total COSTO_DOLARES(1..10) seleccionados:', totalMultiCols);
+```
+
+**Parámetros:**
+- `gridStaticId` (string): Static ID del Interactive Grid
+- `config.sourceColumns` (array): Columnas a leer de cada fila seleccionada
+- `config.formula` (function): Función que se ejecuta por cada fila seleccionada: `(values, record, index) => result`
+- `config.decimalPlaces` (number): Decimales para el resultado cuando la fórmula devuelve número (opcional)
+- `config.autoTrigger` (boolean): Si es `true`, se reejecuta automáticamente cuando cambia la selección (`interactivegridselectionchange`)
+
+**Retorno:**
+- Si NO se define `formula`: retorna un **array** con las filas seleccionadas (`[{ record, index, values }, ...]`).
+- Si se define `formula`: retorna el **último valor** que devuelva la fórmula (opcionalmente formateado con `decimalPlaces`).
+
+---
+
+#### getSelectedRowsToItem(gridStaticId, config)
+
+Similar a `getSelectedRows`, pero en lugar de devolver el resultado, lo escribe directamente en un item de página.
+
+```javascript
+// Ejemplo 1: Sumar COSTO_DOLARES de filas seleccionadas y guardarlo en un item
+apexGridUtils.getSelectedRowsToItem('IG_DETALLE', {
+    sourceColumns: ['COSTO_DOLARES'],
+    targetItem: 'P1_TOTAL_SELECCIONADO',
+    decimalPlaces: 2,
+    formula: function(values, record, index) {
+        if (!this.sum) {
+            this.sum = 0;
+        }
+        const costo = parseFloat(values.COSTO_DOLARES) || 0;
+        this.sum += costo;
+        return this.sum;
+    },
+    autoTrigger: true // recalcula cada vez que cambia la selección del IG
+});
+
+// Ejemplo 2: Sin fórmula → guarda el valor de la primera columna y primera fila seleccionada
+apexGridUtils.getSelectedRowsToItem('IG_DETALLE', {
+    sourceColumns: ['COD_ANIMAL'],
+    targetItem: 'P1_COD_ANIMAL_SELECCIONADO'
+});
+```
+
+**Parámetros:**
+- `gridStaticId` (string): Static ID del Interactive Grid
+- `config.sourceColumns` (array): Columnas a leer de cada fila seleccionada
+- `config.targetItem` (string): Nombre del item de página donde se guardará el resultado
+- `config.formula` (function): Función que se ejecuta por cada fila seleccionada: `(values, record, index) => result`
+- `config.decimalPlaces` (number): Decimales para el resultado cuando la fórmula devuelve número (opcional)
+- `config.autoTrigger` (boolean): Si es `true`, se reejecuta automáticamente cuando cambia la selección (`interactivegridselectionchange`)
+
+**Comportamiento:**
+- Si NO hay filas seleccionadas → limpia el item (`null`/vacío).
+- Si se define `formula` → el último valor devuelto por la fórmula se escribe en `targetItem`.
+- Si NO se define `formula` → escribe el valor de la **primera columna** de `sourceColumns` de la **primera fila seleccionada**.
 
 ### Recalculación Masiva de Filas
 
@@ -1124,6 +1507,94 @@ apexGridUtils.setAllRowsFixed('IG_DETALLE', 'PESO_LIQUIDACION', '123.45', {
   refresh: true
 });
 ```
+
+## 🔄 Recalculación asíncrona con procesos APEX
+
+### apexGridUtils.recalculateAllRowsAsync(gridStaticId, config)
+
+Recalcula todas las filas usando un proceso APEX asíncrono por fila (estructura similar a `recalculateAllRows`).
+
+Parámetros:
+- `gridStaticId` (string): Static ID del IG
+- `config` (object): Configuración del proceso asíncrono
+  - `sourceColumns` (array): Columnas fuente del grid (ej: ['COD_ANIMAL', 'PESO_LIQUIDACION'])
+  - `targetColumn` (string): Columna donde se guarda el resultado
+  - `serverProcess` (string): Nombre del proceso APEX (ej: "GET_PRECIO_ESCALA")
+  - `serverProcessParams` (array): Parámetros adicionales (ej: ['P1194_COD_EMPRESA', 'P1194_FEC_MOVIMIENTO'])
+  - `formula` (function): Función que procesa la respuesta: `(result, record, index, model) => valor`
+  - `decimalPlaces` (number): Decimales para formatear resultado (default: 2)
+  - `delay` (number): Delay entre llamadas en ms (default: 50)
+  - `showSpinner` (boolean): Mostrar spinner (default: true)
+  - `maxConcurrent` (number): Máximo de llamadas concurrentes (default: 5)
+  - `onComplete` (function): Callback al finalizar: `(completed, errors) => void`
+  - `onError` (function): Callback de error por fila: `(error, record, index) => void`
+  - `onlyEditable` (boolean): Solo filas editables (default: true)
+
+Ejemplo (repartir precio por kilo usando proceso APEX):
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+  sourceColumns: ['COD_ANIMAL', 'PESO_LIQUIDACION'], // se envían como x01, x02
+  targetColumn: 'PRECIO_KILO_LIQUIDACION',           // donde se guarda el resultado
+  serverProcess: 'GET_PRECIO_ESCALA',                // proceso APEX
+  serverProcessParams: ['P1194_COD_EMPRESA', 'P1194_FEC_MOVIMIENTO'], // se envían como x03, x04
+  formula: function(result, record, index, model) {  // procesar respuesta
+    const precioKilo = parseFloat(result) || 0;
+    const pesoLiquidacion = parseFloat(model.getValue(record, "PESO_LIQUIDACION")) || 0;
+    const tipCambio = parseFloat($v("P1194_TIP_CAMBIO")) || 1;
+    return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+  },
+  decimalPlaces: 2,
+  delay: 50,
+  showSpinner: true,
+  maxConcurrent: 3,
+  onComplete: (completed, errors) => {
+    console.log(`Procesadas: ${completed}, Errores: ${errors}`);
+  }
+});
+```
+
+**Cómo funciona automáticamente:**
+- `sourceColumns` se envían como `x01`, `x02`, etc. (valores de las columnas del grid)
+- `serverProcessParams` se envían como `x03`, `x04`, etc. con nomenclatura internacional:
+  - `GRID:ACTIVO` → valor de la columna ACTIVO del grid
+  - `ITEM:P1194_COD_EMPRESA` → valor del item de página
+  - `P1194_COD_EMPRESA` → valor del item de página (compatibilidad, patrón P + números + _)
+  - `'ACTIVO'`, `123`, `true` → valores directos
+- `formula` procesa la respuesta del servidor y devuelve el valor final
+- El resultado se setea automáticamente en `targetColumn`
+
+**Ejemplo de parámetros:**
+```javascript
+serverProcessParams: [
+  'GRID:ACTIVO',           // Columna del grid
+  'ITEM:P1194_COD_EMPRESA', // Item de página
+  'P1194_FEC_MOVIMIENTO',   // Item de página (compatibilidad, patrón P + números + _)
+  'PUNTOS',                 // Texto directo (no es item porque no sigue patrón P + números + _)
+  'ACTIVO',                 // Texto directo
+  123,                      // Número directo
+  true                      // Booleano directo
+]
+```
+
+**Detección inteligente de tipos:**
+- **Items de página**: Solo si siguen el patrón `P + números + _` (ej: `P1194_COD_EMPRESA`)
+- **Columnas del grid**: Con prefijo `GRID:` (ej: `GRID:PUNTOS`, `GRID:ACTIVO`)
+- **Items explícitos**: Con prefijo `ITEM:` (ej: `ITEM:P1194_COD_EMPRESA`)
+- **Valores directos**: Todo lo demás (ej: `PUNTOS`, `ACTIVO`, `123`, `true`)
+
+**Casos especiales resueltos:**
+- `'PUNTOS'` → Valor directo (no es item porque no sigue patrón `P + números + _`)
+- `'ACTIVO'` → Valor directo
+- `'P1194_COD_EMPRESA'` → Item de página (sigue patrón `P + números + _`)
+- `'GRID:PUNTOS'` → Columna del grid
+- `'ITEM:P1194_COD_EMPRESA'` → Item de página
+
+Características:
+- ✅ **Control de concurrencia**: Evita sobrecargar el servidor
+- ✅ **Spinner automático**: Muestra progreso visual
+- ✅ **Manejo de errores**: Continúa procesando aunque falle una fila
+- ✅ **Callbacks personalizables**: Para completar y manejar errores
+- ✅ **Filtrado inteligente**: Omite filas marcadas para eliminación
 
 ## 📝 Ejemplos de Uso Completos
 
@@ -2028,4 +2499,176 @@ if (!selectedRecords || selectedRecords.length === 0) {
     // Seleccionar primera fila primero
     apexGridUtils.selectFirstRowOnInit('IG_ANIMALES');
 }
+```
+
+## Cálculo Asíncrono de Filas
+
+### `recalculateAllRowsAsync(gridStaticId, config)`
+
+Recalcula valores para todas las filas llamando un proceso de servidor APEX de forma asíncrona con control de concurrencia.
+
+#### Parámetros
+
+- `gridStaticId` (string): Static ID del Interactive Grid
+- `config` (object): Configuración del proceso
+  - `sourceColumns` (array): Columnas fuente del grid
+  - `targetColumn` (string): Columna destino donde se guardará el resultado
+  - `serverProcess` (string): Nombre del proceso de servidor APEX
+  - `serverProcessParams` (array): Parámetros adicionales para el proceso
+  - `formula` (function): Función para procesar el resultado del servidor: (result, values, record, index) => value
+  - `processValue` (function): Función para procesar valores antes de enviar al servidor: (value, columnName, record, index, model) => processedValue
+  - `decimalPlaces` (number): Decimales para formatear resultado (default: 2)
+  - `delay` (number): Delay entre llamadas en ms (default: 50)
+  - `showSpinner` (boolean): Mostrar spinner durante el proceso (default: true)
+  - `maxConcurrent` (number): Máximo de llamadas concurrentes (default: 5)
+  - `onComplete` (function): Callback al finalizar
+  - `onError` (function): Callback de error por fila
+  - `onlyEditable` (boolean): Solo filas editables (default: true)
+
+#### Nomenclatura de Parámetros
+
+La función soporta una nomenclatura internacional para los parámetros:
+
+- `GRID:COLUMN_NAME`: Extrae valor de la columna del grid
+- `ITEM:P_ITEM_NAME`: Extrae valor del item de página
+- `P_ITEM_NAME`: Compatibilidad con items que siguen el patrón P + números + _
+- Valores directos: Cualquier otro string o valor se usa directamente
+
+#### Ejemplo Básico
+
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    sourceColumns: ['PESO_LIQUIDACION', 'COD_ANIMAL'],
+    targetColumn: 'PRECIO_LIQUIDACION',
+    serverProcess: 'GET_PRECIO_ESCALA',
+    serverProcessParams: [
+        'ITEM:P1194_COD_EMPRESA',
+        'ITEM:P1194_FEC_MOVIMIENTO', 
+        'GRID:COD_ANIMAL',
+        'GRID:PESO_LIQUIDACION'
+    ],
+    formula: function(result, values, record, index) {
+        const pesoLiquidacion = parseFloat(values.PESO_LIQUIDACION) || 0;
+        const tipCambio = parseFloat($v('P1194_TIP_CAMBIO')) || 1;
+        const precioKilo = parseFloat(result) || 0;
+        return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+    }
+});
+```
+
+#### Ejemplo con Procesamiento de Valores
+
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    sourceColumns: ['PESO_LIQUIDACION', 'COD_ANIMAL'],
+    targetColumn: 'PRECIO_LIQUIDACION',
+    serverProcess: 'GET_PRECIO_ESCALA',
+    serverProcessParams: [
+        'ITEM:P1194_COD_EMPRESA',
+        'ITEM:P1194_FEC_MOVIMIENTO', 
+        'GRID:COD_ANIMAL',
+        'GRID:PESO_LIQUIDACION'
+    ],
+    formula: function(result, values, record, index) {
+        const pesoLiquidacion = parseFloat(values.PESO_LIQUIDACION) || 0;
+        const tipCambio = parseFloat($v('P1194_TIP_CAMBIO')) || 1;
+        const precioKilo = parseFloat(result) || 0;
+        return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+    },
+    processValue: function(value, columnName, record, index, model) {
+        // Aplicar el mismo procesamiento que en código original
+        if (columnName === 'PESO_LIQUIDACION') {
+            return parseFloat(value) || 0;
+        }
+        return value; // Para otros valores, pasar tal como están
+    }
+});
+```
+
+#### Ejemplo con Control de Errores
+
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    sourceColumns: ['PESO_LIQUIDACION', 'COD_ANIMAL'],
+    targetColumn: 'PRECIO_LIQUIDACION',
+    serverProcess: 'GET_PRECIO_ESCALA',
+    serverProcessParams: [
+        'ITEM:P1194_COD_EMPRESA',
+        'ITEM:P1194_FEC_MOVIMIENTO', 
+        'GRID:COD_ANIMAL',
+        'GRID:PESO_LIQUIDACION'
+    ],
+    formula: function(result, values, record, index) {
+        const pesoLiquidacion = parseFloat(values.PESO_LIQUIDACION) || 0;
+        const tipCambio = parseFloat($v('P1194_TIP_CAMBIO')) || 1;
+        const precioKilo = parseFloat(result) || 0;
+        return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+    },
+    onComplete: function(completed, errors) {
+        console.log(`Proceso completado: ${completed} filas procesadas, ${errors} errores`);
+        if (errors > 0) {
+            apex.message.alert(`Se procesaron ${completed} filas con ${errors} errores`);
+        }
+    },
+    onError: function(error, record, index) {
+        console.error(`Error en fila ${index}:`, error);
+        apex.message.alert(`Error al procesar fila ${index + 1}`);
+    }
+});
+```
+
+#### Ejemplo con Configuración Avanzada
+
+```javascript
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    sourceColumns: ['PESO_LIQUIDACION', 'COD_ANIMAL'],
+    targetColumn: 'PRECIO_LIQUIDACION',
+    serverProcess: 'GET_PRECIO_ESCALA',
+    serverProcessParams: [
+        'ITEM:P1194_COD_EMPRESA',
+        'ITEM:P1194_FEC_MOVIMIENTO', 
+        'GRID:COD_ANIMAL',
+        'GRID:PESO_LIQUIDACION'
+    ],
+    formula: function(result, values, record, index) {
+        const pesoLiquidacion = parseFloat(values.PESO_LIQUIDACION) || 0;
+        const tipCambio = parseFloat($v('P1194_TIP_CAMBIO')) || 1;
+        const precioKilo = parseFloat(result) || 0;
+        return Math.round((pesoLiquidacion * precioKilo / tipCambio) * 100) / 100;
+    },
+    decimalPlaces: 2,
+    delay: 100,
+    showSpinner: true,
+    maxConcurrent: 3,
+    onlyEditable: true
+});
+```
+
+### Problemas con `recalculateAllRowsAsync`
+
+#### Error ORA-01861: Formato de fecha incorrecto
+```javascript
+// Usar processValue para controlar el formato de datos
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    // ... configuración
+    processValue: function(value, columnName, record, index, model) {
+        // Aplicar el mismo procesamiento que en código original
+        if (columnName === 'PESO_LIQUIDACION') {
+            return parseFloat(value) || 0;
+        }
+        return value; // Para otros valores, pasar tal como están
+    }
+});
+```
+
+#### Valores no se procesan correctamente
+```javascript
+// Verificar que los parámetros se estén pasando correctamente
+apexGridUtils.recalculateAllRowsAsync('IG_DETALLE', {
+    // ... configuración
+    onError: function(error, record, index) {
+        console.error(`Error en fila ${index}:`, error);
+        console.log('Parámetros enviados:', params);
+    }
+});
 ```
