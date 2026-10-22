@@ -2,7 +2,8 @@
  * invUtils — Utilidades para Oracle APEX
  * Autor: Luis Talavera | Licencia: MIT
  * Referencias de API: Oracle APEX 24.1 hasta 26.1; versiones posteriores requieren nueva validación.
- * Instalación, mantenimiento y catálogo: README.md.
+ * Inicio e instalación: README.md. Desarrollo: docs/desarrollo.md.
+ * Ejemplos: docs/manual.md. Catálogo: docs/referencia-api.md.
  *
  * Único objeto global: invUtils.
  * Uso: invUtils.mostrarAlerta(...), invUtils.item.leerNumero(...),
@@ -5514,9 +5515,10 @@ window.invUtils = (function (apex, $) {
     // 2. Agregar su nombre al objeto correspondiente de este return.
     //    Ejemplo: leerTexto dentro de item se usa como invUtils.item.leerTexto(...).
     // 3. Si es un auxiliar interno, NO agregarlo aquí.
-    // 4. Aplicar las reglas de nombres del README: leer/asignar, verbo + objeto,
+    // 4. Aplicar las reglas de docs/desarrollo.md: leer/asignar, verbo + objeto,
     //    tres palabras preferidas y excepciones justificadas por el comportamiento.
-    // 5. Documentar firma, retorno y ejemplo en README.md. No traducir métodos de APEX.
+    // 5. Documentar firma y retorno en docs/referencia-api.md, y ejemplos en docs/manual.md.
+    //    Registrar renombrados en docs/migracion.md. No traducir métodos de APEX.
     return {
         mostrarAlerta,
         posponerEjecucion,
