@@ -1,12 +1,12 @@
 /**
  * invUtils — Utilidades para Oracle APEX
  * Autor: Luis Talavera | Licencia: MIT
- * Referencias de API: Oracle APEX 24.1 y 26.2.
+ * Referencias de API: Oracle APEX 24.1 hasta 26.1; versiones posteriores requieren nueva validación.
  * Instalación, mantenimiento y catálogo: README.md.
  *
  * Único objeto global: invUtils.
- * Uso: invUtils.alerta(...), invUtils.item.obtenerNumero(...),
- *      invUtils.grid.establecerValorCelda(...).
+ * Uso: invUtils.mostrarAlerta(...), invUtils.item.leerNumero(...),
+ *      invUtils.grid.asignarCelda(...).
  * Las funciones y el estado son privados hasta publicarlos en el return final.
  * Conservar los nombres de métodos, eventos y opciones definidos por Oracle APEX.
  */
@@ -34,7 +34,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} mensaje - Texto que se mostrará.
      * @returns {boolean}
      */
-    function alerta(status, mensaje){
+    function mostrarAlerta(status, mensaje){
 
         var v_status = status;
         var v_manesaje = mensaje;
@@ -262,7 +262,7 @@ window.invUtils = (function (apex, $) {
      * @param {number} decimalPlaces - Número de decimales (default: 2)
      * @returns {string} - Valor en formato europeo
      */
-    function convertirAFormatoEuropeo(value, decimalPlaces = 2) {
+    function convertirNumeroEuropeo(value, decimalPlaces = 2) {
         const normalized = normalizarNumero(value);
         return formatearNumeroEuropeo(normalized, decimalPlaces, true);
     }
@@ -278,7 +278,7 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor numérico convertido
      */
-    function obtenerNumero(itemName, defaultValue = 0) {
+    function leerNumero(itemName, defaultValue = 0) {
         try {
             let value = $v(itemName);
 
@@ -298,23 +298,23 @@ window.invUtils = (function (apex, $) {
 
             // Verificar si la conversión fue exitosa
             if (isNaN(result)) {
-                console.warn(`obtenerNumero: No se pudo convertir '${value}' a número. Usando valor por defecto: ${defaultValue}`);
+                console.warn(`leerNumero: No se pudo convertir '${value}' a número. Usando valor por defecto: ${defaultValue}`);
                 return defaultValue;
             }
 
             return result;
 
         } catch (error) {
-            console.error(`obtenerNumero: Error al obtener valor de '${itemName}':`, error);
+            console.error(`leerNumero: Error al obtener valor de '${itemName}':`, error);
             return defaultValue;
         }
     }
 
     /**
-     * Versión abreviada de obtenerNumero para uso más rápido
+     * Nombre alternativo de leerNumero; conserva la misma lectura numérica.
      */
-    function obtener(itemName, defaultValue = 0) {
-        return obtenerNumero(itemName, defaultValue);
+    function leerValorNumerico(itemName, defaultValue = 0) {
+        return leerNumero(itemName, defaultValue);
     }
 
     /**
@@ -323,8 +323,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto para todos
      * @returns {number[]} - Array de valores numéricos
      */
-    function obtenerNumeros(itemNames, defaultValue = 0) {
-        return itemNames.map(itemName => obtenerNumero(itemName, defaultValue));
+    function leerNumeros(itemNames, defaultValue = 0) {
+        return itemNames.map(itemName => leerNumero(itemName, defaultValue));
     }
 
     // =============================================================================
@@ -396,7 +396,7 @@ window.invUtils = (function (apex, $) {
             }
 
             // Función auxiliar para obtener valor real (maneja poplovs)
-            function obtenerValorReal(valorObj) {
+            function leerValorReal(valorObj) {
                 return valorObj?.v !== undefined ? valorObj.v : valorObj;
             }
 
@@ -414,7 +414,7 @@ window.invUtils = (function (apex, $) {
                     var campoNormalizado = normalizarCampo(nombreCampo);
 
                     var valorBruto = model.getValue(record, campoNormalizado);
-                    var valorFinal = obtenerValorReal(valorBruto);
+                    var valorFinal = leerValorReal(valorBruto);
 
 
                     if (configCampo.transformacion && typeof configCampo.transformacion === 'function') {
@@ -761,7 +761,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} modoEdicion - Si debe habilitar modo edición (default: true)
      * @returns {object} - Objeto con resultado de la operación
      */
-    function cargarDatosDesdeItem(regionId, campoOrigen, limpiar = true, refrescar = true, modoEdicion = true) {
+    function cargarDesdeItem(regionId, campoOrigen, limpiar = true, refrescar = true, modoEdicion = true) {
         return cargarDatos({
             regionId: regionId,
             campoOrigen: campoOrigen,
@@ -841,7 +841,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} gridStaticId - Static ID del grid
      * @param {object} config - Configuración del cálculo
      */
-    function calcular(gridStaticId, config) {
+    function calcularColumnas(gridStaticId, config) {
         const settings = {
             decimalPlaces: 2,
             ...config
@@ -851,8 +851,8 @@ window.invUtils = (function (apex, $) {
     }
 
     // Ejemplo de uso:
-    // let valor = obtener('P1216_TOTAL_U');
-    // let [costo1, costo2] = obtenerNumeros(['P1216_TOTAL_U', 'P1216_TOTAL_PROD']);
+    // let valor = invUtils.item.leerNumero('P1216_TOTAL_U');
+    // let [costo1, costo2] = invUtils.item.leerNumeros(['P1216_TOTAL_U', 'P1216_TOTAL_PROD']);
 
     /**
      * Configurar cálculo automático para multiplicación (CANTIDAD × COSTO = TOTAL)
@@ -864,7 +864,7 @@ window.invUtils = (function (apex, $) {
      * @param {number} decimalPlaces - Número de decimales (default: 3)
      * @returns {string} - ID de la configuración creada
      */
-    function configurarCantidadPorCosto(gridStaticId, cantidadColumn = 'CANTIDAD', costoColumn = 'COSTO', totalColumn = 'TOTAL', decimalPlaces = 3) {
+    function configurarMultiplicacion(gridStaticId, cantidadColumn = 'CANTIDAD', costoColumn = 'COSTO', totalColumn = 'TOTAL', decimalPlaces = 3) {
         try {
             console.log(`invUtils: Configurando cálculo automático ${cantidadColumn} × ${costoColumn} = ${totalColumn} para ${gridStaticId}`);
 
@@ -899,7 +899,7 @@ window.invUtils = (function (apex, $) {
             return configId;
 
         } catch (error) {
-            console.error('invUtils configurarCantidadPorCosto error:', error);
+            console.error('invUtils configurarMultiplicacion error:', error);
             return null;
         }
     }
@@ -912,7 +912,7 @@ window.invUtils = (function (apex, $) {
      */
     function asegurarCalculoAutomatico(gridStaticId, targetColumn = 'TOTAL') {
         try {
-            const config = obtenerConfiguracionCalculo(gridStaticId, targetColumn);
+            const config = leerConfiguracionCalculo(gridStaticId, targetColumn);
 
             if (config) {
                 console.log(`invUtils: Configuración existente encontrada para ${gridStaticId} -> ${targetColumn}`);
@@ -921,7 +921,7 @@ window.invUtils = (function (apex, $) {
                 console.log(`invUtils: No se encontró configuración para ${gridStaticId} -> ${targetColumn}, configurando automáticamente...`);
 
                 // Configurar automáticamente el cálculo más común
-                const configId = configurarCantidadPorCosto(gridStaticId);
+                const configId = configurarMultiplicacion(gridStaticId);
                 return configId !== null;
             }
 
@@ -939,7 +939,7 @@ window.invUtils = (function (apex, $) {
      */
     function asegurarFormatoDecimal(gridStaticId, columnName, decimalPlaces = 2) {
         try {
-            const gridData = obtenerContextoRegistro(gridStaticId);
+            const gridData = leerContextoRegistro(gridStaticId);
             if (!gridData.success) {
                 return false;
             }
@@ -972,7 +972,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} autoUpdate - Si debe actualizarse automáticamente cuando cambie el grid (default: true)
      * @returns {object} - Objeto con la suma calculada y la función calcularSuma para uso externo
      */
-    function sumarColumnaEnItem(gridStaticId, columnName, targetItem, decimalPlaces = 2, autoUpdate = true) {
+    function sumarColumna(gridStaticId, columnName, targetItem, decimalPlaces = 2, autoUpdate = true) {
         try {
             const ig$ = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid");
             const model = ig$.model;
@@ -1036,7 +1036,7 @@ window.invUtils = (function (apex, $) {
             };
 
         } catch (error) {
-            console.error('invUtils sumarColumnaEnItem error:', error);
+            console.error('invUtils sumarColumna error:', error);
             return {
                 sum: 0,
                 calcularSuma: function () { return 0; },
@@ -1053,8 +1053,8 @@ window.invUtils = (function (apex, $) {
      * @param {string} targetItem - ID del item donde colocar el total
      * @param {number} decimalPlaces - Número de decimales (default: 2)
      */
-    function sumarTotalEnItem(gridStaticId, targetItem, decimalPlaces = 2) {
-        return sumarColumnaEnItem(gridStaticId, 'TOTAL', targetItem, decimalPlaces, true);
+    function sumarTotal(gridStaticId, targetItem, decimalPlaces = 2) {
+        return sumarColumna(gridStaticId, 'TOTAL', targetItem, decimalPlaces, true);
     }
 
     /**
@@ -1171,7 +1171,7 @@ window.invUtils = (function (apex, $) {
                             console.log(`invUtils: Ejecutando recálculo para configuración:`, config);
 
                             // Verificar que el grid existe antes de recalcular
-                            const gridData = obtenerContextoRegistro(gridStaticId);
+                            const gridData = leerContextoRegistro(gridStaticId);
                             if (!gridData.success) {
                                 console.error(`invUtils: No se pudo obtener registro activo para ${gridStaticId}:`, gridData.error);
                                 return;
@@ -1238,7 +1238,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} targetColumn - Columna específica (opcional)
      * @returns {object|null} - Configuración almacenada o null si no existe
      */
-    function obtenerConfiguracionCalculo(gridStaticId, targetColumn = null) {
+    function leerConfiguracionCalculo(gridStaticId, targetColumn = null) {
         try {
             // Verificación de seguridad
             if (typeof autoCalculationConfigs === 'undefined') {
@@ -1260,7 +1260,7 @@ window.invUtils = (function (apex, $) {
                 return configs.length > 0 ? configs : null;
             }
         } catch (error) {
-            console.error('invUtils obtenerConfiguracionCalculo error:', error);
+            console.error('invUtils leerConfiguracionCalculo error:', error);
             return null;
         }
     }
@@ -1323,7 +1323,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} gridStaticId - Static ID del Interactive Grid (opcional, si no se especifica retorna todas)
      * @returns {object} - Objeto con todas las configuraciones
      */
-    function obtenerConfiguracionesCalculo(gridStaticId = null) {
+    function leerConfiguracionesCalculo(gridStaticId = null) {
         try {
             // Verificación de seguridad
             if (typeof autoCalculationConfigs === 'undefined') {
@@ -1339,7 +1339,7 @@ window.invUtils = (function (apex, $) {
             });
             return configs;
         } catch (error) {
-            console.error('invUtils obtenerConfiguracionesCalculo error:', error);
+            console.error('invUtils leerConfiguracionesCalculo error:', error);
             return {};
         }
     }
@@ -1355,7 +1355,7 @@ window.invUtils = (function (apex, $) {
     /**
      * Inicializar el módulo (llamado automáticamente)
      */
-    function inicializar() {
+    function inicializarModulo() {
         try {
             if (!estaInicializado()) {
                 console.error('invUtils: Error al inicializar el módulo');
@@ -1477,8 +1477,8 @@ window.invUtils = (function (apex, $) {
     /**
      * Obtener valor de una columna del registro activo
      */
-    function obtenerValorColumna(gridStaticId, columnName) {
-        const gridData = obtenerContextoRegistro(gridStaticId);
+    function leerColumna(gridStaticId, columnName) {
+        const gridData = leerContextoRegistro(gridStaticId);
         if (!gridData.success) {
             return null;
         }
@@ -1493,7 +1493,7 @@ window.invUtils = (function (apex, $) {
      * @param {number} rowIndex - Índice de la fila (1 = primera fila, -1 = fila seleccionada)
      * @returns {any} - Valor de la celda o null si no se encuentra
      */
-    function obtenerValorCelda(gridStaticId, columnName, rowIndex = -1) {
+    function leerCelda(gridStaticId, columnName, rowIndex = -1) {
         try {
             // Obtener el modelo usando el método que funciona
             const model = apex.region(gridStaticId).widget().interactiveGrid("getCurrentView").model;
@@ -1563,7 +1563,7 @@ window.invUtils = (function (apex, $) {
             return finalValue;
 
         } catch (error) {
-            console.error('invUtils obtenerValorCelda error:', error);
+            console.error('invUtils leerCelda error:', error);
             return null;
         }
     }
@@ -1574,8 +1574,8 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Nombre de la columna
      * @returns {any} - Valor de la celda o null si no se encuentra
      */
-    function obtenerValorCeldaSeleccionada(gridStaticId, columnName) {
-        return obtenerValorCelda(gridStaticId, columnName, -1);
+    function leerCeldaSeleccionada(gridStaticId, columnName) {
+        return leerCelda(gridStaticId, columnName, -1);
     }
 
     /**
@@ -1584,8 +1584,8 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Nombre de la columna
      * @returns {any} - Valor de la celda o null si no se encuentra
      */
-    function obtenerValorPrimeraCelda(gridStaticId, columnName) {
-        return obtenerValorCelda(gridStaticId, columnName, 1);
+    function leerPrimeraCelda(gridStaticId, columnName) {
+        return leerCelda(gridStaticId, columnName, 1);
     }
 
     /**
@@ -1594,7 +1594,7 @@ window.invUtils = (function (apex, $) {
      * @param {array} columns - Nombres de columnas a obtener; se requiere una lista no vacía.
      * @returns {object|null} - Objeto con todos los campos de la fila o null si no hay fila seleccionada
      */
-    function obtenerFilaActual(gridStaticId, columns = null) {
+    function leerFilaActual(gridStaticId, columns = null) {
         try {
             console.log(`📊 invUtils: Obteniendo fila actual de ${gridStaticId}`);
 
@@ -1662,7 +1662,7 @@ window.invUtils = (function (apex, $) {
             return rowData;
 
         } catch (error) {
-            console.error('invUtils obtenerFilaActual error:', error);
+            console.error('invUtils leerFilaActual error:', error);
             return null;
         }
     }
@@ -1675,9 +1675,9 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor numérico normalizado
      */
-    function obtenerNumeroCelda(gridStaticId, columnName, rowIndex = -1, defaultValue = 0) {
+    function leerNumeroCelda(gridStaticId, columnName, rowIndex = -1, defaultValue = 0) {
         try {
-            const rawValue = obtenerValorCelda(gridStaticId, columnName, rowIndex);
+            const rawValue = leerCelda(gridStaticId, columnName, rowIndex);
 
             if (rawValue === null || rawValue === undefined || rawValue === '') {
                 return defaultValue;
@@ -1696,7 +1696,7 @@ window.invUtils = (function (apex, $) {
             return normalizedValue;
 
         } catch (error) {
-            console.error('invUtils obtenerNumeroCelda error:', error);
+            console.error('invUtils leerNumeroCelda error:', error);
             return defaultValue;
         }
     }
@@ -1708,8 +1708,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor numérico normalizado
      */
-    function obtenerNumeroCeldaSeleccionada(gridStaticId, columnName, defaultValue = 0) {
-        return obtenerNumeroCelda(gridStaticId, columnName, -1, defaultValue);
+    function leerNumeroSeleccionado(gridStaticId, columnName, defaultValue = 0) {
+        return leerNumeroCelda(gridStaticId, columnName, -1, defaultValue);
     }
 
     /**
@@ -1719,8 +1719,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor numérico normalizado
      */
-    function obtenerNumeroPrimeraCelda(gridStaticId, columnName, defaultValue = 0) {
-        return obtenerNumeroCelda(gridStaticId, columnName, 1, defaultValue);
+    function leerPrimerNumero(gridStaticId, columnName, defaultValue = 0) {
+        return leerNumeroCelda(gridStaticId, columnName, 1, defaultValue);
     }
 
     /**
@@ -1732,9 +1732,9 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor numérico con decimales especificados
      */
-    function obtenerNumeroCeldaConDecimales(gridStaticId, columnName, rowIndex = -1, decimalPlaces = 2, defaultValue = 0) {
+    function leerNumeroRedondeado(gridStaticId, columnName, rowIndex = -1, decimalPlaces = 2, defaultValue = 0) {
         try {
-            const rawValue = obtenerNumeroCelda(gridStaticId, columnName, rowIndex, defaultValue);
+            const rawValue = leerNumeroCelda(gridStaticId, columnName, rowIndex, defaultValue);
 
             if (rawValue === defaultValue && rawValue !== 0) {
                 return defaultValue;
@@ -1747,7 +1747,7 @@ window.invUtils = (function (apex, $) {
             return formattedValue;
 
         } catch (error) {
-            console.error('invUtils obtenerNumeroCeldaConDecimales error:', error);
+            console.error('invUtils leerNumeroRedondeado error:', error);
             return defaultValue;
         }
     }
@@ -1760,8 +1760,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor con decimales especificados
      */
-    function obtenerNumeroCeldaSeleccionadaConDecimales(gridStaticId, columnName, decimalPlaces = 2, defaultValue = 0) {
-        return obtenerNumeroCeldaConDecimales(gridStaticId, columnName, -1, decimalPlaces, defaultValue);
+    function leerNumeroSeleccionadoRedondeado(gridStaticId, columnName, decimalPlaces = 2, defaultValue = 0) {
+        return leerNumeroRedondeado(gridStaticId, columnName, -1, decimalPlaces, defaultValue);
     }
 
     /**
@@ -1772,8 +1772,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor con decimales especificados
      */
-    function obtenerNumeroPrimeraCeldaConDecimales(gridStaticId, columnName, decimalPlaces = 2, defaultValue = 0) {
-        return obtenerNumeroCeldaConDecimales(gridStaticId, columnName, 1, decimalPlaces, defaultValue);
+    function leerPrimerNumeroRedondeado(gridStaticId, columnName, decimalPlaces = 2, defaultValue = 0) {
+        return leerNumeroRedondeado(gridStaticId, columnName, 1, decimalPlaces, defaultValue);
     }
 
     /**
@@ -1784,9 +1784,9 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor entero
      */
-    function obtenerEnteroCelda(gridStaticId, columnName, rowIndex = -1, defaultValue = 0) {
+    function leerEnteroCelda(gridStaticId, columnName, rowIndex = -1, defaultValue = 0) {
         try {
-            const rawValue = obtenerNumeroCelda(gridStaticId, columnName, rowIndex, defaultValue);
+            const rawValue = leerNumeroCelda(gridStaticId, columnName, rowIndex, defaultValue);
 
             if (rawValue === defaultValue && rawValue !== 0) {
                 return defaultValue;
@@ -1799,7 +1799,7 @@ window.invUtils = (function (apex, $) {
             return integerValue;
 
         } catch (error) {
-            console.error('invUtils obtenerEnteroCelda error:', error);
+            console.error('invUtils leerEnteroCelda error:', error);
             return defaultValue;
         }
     }
@@ -1811,8 +1811,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor entero
      */
-    function obtenerEnteroCeldaSeleccionada(gridStaticId, columnName, defaultValue = 0) {
-        return obtenerEnteroCelda(gridStaticId, columnName, -1, defaultValue);
+    function leerEnteroSeleccionado(gridStaticId, columnName, defaultValue = 0) {
+        return leerEnteroCelda(gridStaticId, columnName, -1, defaultValue);
     }
 
     /**
@@ -1822,8 +1822,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} defaultValue - Valor por defecto si no se puede convertir (default: 0)
      * @returns {number} - Valor entero
      */
-    function obtenerEnteroPrimeraCelda(gridStaticId, columnName, defaultValue = 0) {
-        return obtenerEnteroCelda(gridStaticId, columnName, 1, defaultValue);
+    function leerPrimerEntero(gridStaticId, columnName, defaultValue = 0) {
+        return leerEnteroCelda(gridStaticId, columnName, 1, defaultValue);
     }
 
     // =============================================================================
@@ -1833,8 +1833,8 @@ window.invUtils = (function (apex, $) {
     /**
      * Establecer valor en una columna del registro activo
      */
-    function establecerValorColumna(gridStaticId, columnName, value) {
-        const gridData = obtenerContextoRegistro(gridStaticId);
+    function asignarColumna(gridStaticId, columnName, value) {
+        const gridData = leerContextoRegistro(gridStaticId);
         if (!gridData.success) {
             return false;
         }
@@ -1852,7 +1852,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerValorCelda(gridStaticId, columnName, rowIndex, value, refresh = true) {
+    function asignarCelda(gridStaticId, columnName, rowIndex, value, refresh = true) {
         try {
             console.log(`🔧 invUtils: Seteando valor ${value} en ${columnName}, fila ${rowIndex}`);
 
@@ -2074,8 +2074,8 @@ window.invUtils = (function (apex, $) {
             return true;
 
         } catch (error) {
-            console.error('invUtils establecerValorCelda error:', error);
-            console.error('invUtils establecerValorCelda - Parámetros recibidos:', {
+            console.error('invUtils asignarCelda error:', error);
+            console.error('invUtils asignarCelda - Parámetros recibidos:', {
                 gridStaticId: gridStaticId,
                 columnName: columnName,
                 rowIndex: rowIndex,
@@ -2094,8 +2094,8 @@ window.invUtils = (function (apex, $) {
      * @param {any} value - Valor a establecer
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      */
-    function establecerValorCeldaSeleccionada(gridStaticId, columnName, value, refresh = true) {
-        return establecerValorCelda(gridStaticId, columnName, -1, value, refresh);
+    function asignarCeldaSeleccionada(gridStaticId, columnName, value, refresh = true) {
+        return asignarCelda(gridStaticId, columnName, -1, value, refresh);
     }
 
     /**
@@ -2105,8 +2105,8 @@ window.invUtils = (function (apex, $) {
      * @param {any} value - Valor a establecer
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      */
-    function establecerValorPrimeraCelda(gridStaticId, columnName, value, refresh = true) {
-        return establecerValorCelda(gridStaticId, columnName, 1, value, refresh);
+    function asignarPrimeraCelda(gridStaticId, columnName, value, refresh = true) {
+        return asignarCelda(gridStaticId, columnName, 1, value, refresh);
     }
 
     /**
@@ -2127,7 +2127,7 @@ window.invUtils = (function (apex, $) {
 
         try {
             columnNames.forEach(columnName => {
-                const success = establecerValorCelda(gridStaticId, columnName, -1, value, false);
+                const success = asignarCelda(gridStaticId, columnName, -1, value, false);
                 if (!success) {
                     allSuccess = false;
                     console.warn(`invUtils: Error limpiando columna ${columnName}`);
@@ -2136,7 +2136,7 @@ window.invUtils = (function (apex, $) {
 
             // Refrescar solo una vez al final si se solicitó
             if (refresh && allSuccess) {
-                refrescarSoloVista(gridStaticId);
+                refrescarVista(gridStaticId);
             }
 
             return allSuccess;
@@ -2156,7 +2156,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroCelda(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true) {
+    function asignarNumeroCelda(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true) {
         try {
             let finalValue = value;
 
@@ -2165,8 +2165,8 @@ window.invUtils = (function (apex, $) {
                 finalValue = parseFloat(value.toFixed(decimalPlaces));
             }
 
-            // Usar la función establecerValorCelda existente
-            const result = establecerValorCelda(gridStaticId, columnName, rowIndex, finalValue, refresh);
+            // Usar la función asignarCelda existente
+            const result = asignarCelda(gridStaticId, columnName, rowIndex, finalValue, refresh);
 
             if (result) {
                 //console.log(`invUtils: Valor numérico ${finalValue} establecido en ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}${decimalPlaces !== null ? ` (con ${decimalPlaces} decimales)` : ''}`);
@@ -2175,7 +2175,7 @@ window.invUtils = (function (apex, $) {
             return result;
 
         } catch (error) {
-            console.error('invUtils establecerNumeroCelda error:', error);
+            console.error('invUtils asignarNumeroCelda error:', error);
             return false;
         }
     }
@@ -2189,8 +2189,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroCeldaSeleccionada(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
-        return establecerNumeroCelda(gridStaticId, columnName, -1, value, decimalPlaces, refresh);
+    function asignarNumeroSeleccionado(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
+        return asignarNumeroCelda(gridStaticId, columnName, -1, value, decimalPlaces, refresh);
     }
 
     /**
@@ -2202,8 +2202,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroPrimeraCelda(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
-        return establecerNumeroCelda(gridStaticId, columnName, 1, value, decimalPlaces, refresh);
+    function asignarPrimerNumero(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
+        return asignarNumeroCelda(gridStaticId, columnName, 1, value, decimalPlaces, refresh);
     }
 
     /**
@@ -2215,9 +2215,9 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerEnteroCelda(gridStaticId, columnName, rowIndex, value, refresh = true) {
+    function asignarEnteroCelda(gridStaticId, columnName, rowIndex, value, refresh = true) {
         const integerValue = Math.round(value);
-        return establecerValorCelda(gridStaticId, columnName, rowIndex, integerValue, refresh);
+        return asignarCelda(gridStaticId, columnName, rowIndex, integerValue, refresh);
     }
 
     /**
@@ -2228,8 +2228,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerEnteroCeldaSeleccionada(gridStaticId, columnName, value, refresh = true) {
-        return establecerEnteroCelda(gridStaticId, columnName, -1, value, refresh);
+    function asignarEnteroSeleccionado(gridStaticId, columnName, value, refresh = true) {
+        return asignarEnteroCelda(gridStaticId, columnName, -1, value, refresh);
     }
 
     /**
@@ -2240,8 +2240,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerEnteroPrimeraCelda(gridStaticId, columnName, value, refresh = true) {
-        return establecerEnteroCelda(gridStaticId, columnName, 1, value, refresh);
+    function asignarPrimerEntero(gridStaticId, columnName, value, refresh = true) {
+        return asignarEnteroCelda(gridStaticId, columnName, 1, value, refresh);
     }
 
     /**
@@ -2258,12 +2258,12 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerValorYRecalcular(gridStaticId, columnName, rowIndex, value, recalculoConfig, refresh = true) {
+    function asignarCeldaConRecalculo(gridStaticId, columnName, rowIndex, value, recalculoConfig, refresh = true) {
         try {
             console.log(`invUtils: Estableciendo valor ${value} en ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}`);
 
             // Establecer el valor
-            const result = establecerNumeroCelda(gridStaticId, columnName, rowIndex, value, null, refresh);
+            const result = asignarNumeroCelda(gridStaticId, columnName, rowIndex, value, null, refresh);
 
             if (result && recalculoConfig) {
                 // Esperar un poco para que el valor se guarde
@@ -2280,7 +2280,7 @@ window.invUtils = (function (apex, $) {
             return result;
 
         } catch (error) {
-            console.error('invUtils establecerValorYRecalcular error:', error);
+            console.error('invUtils asignarCeldaConRecalculo error:', error);
             return false;
         }
     }
@@ -2293,8 +2293,8 @@ window.invUtils = (function (apex, $) {
      * @param {object} recalculoConfig - Configuración para el recálculo automático
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      */
-    function establecerValorSeleccionadoYRecalcular(gridStaticId, columnName, value, recalculoConfig, refresh = true) {
-        return establecerValorYRecalcular(gridStaticId, columnName, -1, value, recalculoConfig, refresh);
+    function asignarCeldaSeleccionadaConRecalculo(gridStaticId, columnName, value, recalculoConfig, refresh = true) {
+        return asignarCeldaConRecalculo(gridStaticId, columnName, -1, value, recalculoConfig, refresh);
     }
 
     /**
@@ -2305,8 +2305,8 @@ window.invUtils = (function (apex, $) {
      * @param {object} recalculoConfig - Configuración para el recálculo automático
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      */
-    function establecerPrimerValorYRecalcular(gridStaticId, columnName, value, recalculoConfig, refresh = true) {
-        return establecerValorYRecalcular(gridStaticId, columnName, 1, value, recalculoConfig, refresh);
+    function asignarPrimeraCeldaConRecalculo(gridStaticId, columnName, value, recalculoConfig, refresh = true) {
+        return asignarCeldaConRecalculo(gridStaticId, columnName, 1, value, recalculoConfig, refresh);
     }
 
     /**
@@ -2322,7 +2322,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} options.onlyEditable - Solo filas editables (default: true)
      * @returns {boolean} - true si se procesó sin errores graves
      */
-    function establecerValorEnFilas(gridStaticId, targetColumn, valueOrFormula, options) {
+    function asignarFilas(gridStaticId, targetColumn, valueOrFormula, options) {
         try {
             options = options || {};
             const decimalPlaces = (typeof options.decimalPlaces === 'number') ? options.decimalPlaces : null;
@@ -2380,7 +2380,7 @@ window.invUtils = (function (apex, $) {
 
                     processed++;
                 } catch (rowErr) {
-                    console.warn('invUtils: Error en establecerValorEnFilas para registro', id, rowErr);
+                    console.warn('invUtils: Error en asignarFilas para registro', id, rowErr);
                     skipped++;
                 }
             });
@@ -2389,11 +2389,11 @@ window.invUtils = (function (apex, $) {
                 try { if (grid.view$ && grid.view$.trigger) { grid.view$.trigger('refresh'); } } catch (e) { /* noop */ }
             }
 
-            console.log(`invUtils: establecerValorEnFilas completado. Procesados=${processed}, Omitidos=${skipped}`);
+            console.log(`invUtils: asignarFilas completado. Procesados=${processed}, Omitidos=${skipped}`);
             return true;
 
         } catch (error) {
-            console.error('invUtils establecerValorEnFilas error:', error);
+            console.error('invUtils asignarFilas error:', error);
             return false;
         }
     }
@@ -2403,10 +2403,10 @@ window.invUtils = (function (apex, $) {
      * @param {string} gridStaticId
      * @param {string} targetColumn
      * @param {any} value
-     * @param {object} options - mismas opciones que establecerValorEnFilas (opcional)
+     * @param {object} options - mismas opciones que asignarFilas (opcional)
      */
-    function establecerValorFijoEnFilas(gridStaticId, targetColumn, value, options) {
-        return establecerValorEnFilas(gridStaticId, targetColumn, value, options || {});
+    function asignarValorFilas(gridStaticId, targetColumn, value, options) {
+        return asignarFilas(gridStaticId, targetColumn, value, options || {});
     }
 
     // =============================================================================
@@ -2420,7 +2420,7 @@ window.invUtils = (function (apex, $) {
      * @param {number} rowIndex - Índice de la fila (0 = primera fila, -1 = fila seleccionada)
      * @param {boolean} focus - Si debe hacer focus en la celda (default: true)
      */
-    function cursorCelda(gridStaticId, columnName, rowIndex = -1, focus = true) {
+    function irACelda(gridStaticId, columnName, rowIndex = -1, focus = true) {
         try {
             console.log(`🎯 invUtils: Navegando a celda ${columnName} en fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}`);
 
@@ -2487,7 +2487,7 @@ window.invUtils = (function (apex, $) {
             return false;
 
         } catch (error) {
-            console.error('invUtils cursorCelda error:', error);
+            console.error('invUtils irACelda error:', error);
             return false;
         }
     }
@@ -2498,7 +2498,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Nombre de la columna
      */
     function irAPrimeraCelda(gridStaticId, columnName) {
-        return cursorCelda(gridStaticId, columnName, 0, true);
+        return irACelda(gridStaticId, columnName, 0, true);
     }
 
     /**
@@ -2507,7 +2507,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Nombre de la columna
      * @returns {boolean} - true si se navegó correctamente
      */
-    function cursorCeldaSeleccionada(gridStaticId, columnName) {
+    function irACeldaSeleccionada(gridStaticId, columnName) {
         try {
             console.log(`🎯 invUtils: Navegando a celda seleccionada ${columnName} en ${gridStaticId}`);
 
@@ -2530,7 +2530,7 @@ window.invUtils = (function (apex, $) {
             return true;
 
         } catch (error) {
-            console.error('invUtils cursorCeldaSeleccionada error:', error);
+            console.error('invUtils irACeldaSeleccionada error:', error);
             return false;
         }
     }
@@ -2539,7 +2539,7 @@ window.invUtils = (function (apex, $) {
      * Inicializar el sistema de re-enfoque automático
      * @param {boolean} enable - Si debe habilitar el sistema (default: true)
      */
-    function inicializarRestauracionFoco(enable = true) {
+    function configurarRestauracionFoco(enable = true) {
         try {
             focusRestorationEnabled = enable;
 
@@ -2579,7 +2579,7 @@ window.invUtils = (function (apex, $) {
             return true;
 
         } catch (error) {
-            console.error('invUtils inicializarRestauracionFoco error:', error);
+            console.error('invUtils configurarRestauracionFoco error:', error);
             return false;
         }
     }
@@ -2588,21 +2588,21 @@ window.invUtils = (function (apex, $) {
      * Habilitar el sistema de re-enfoque automático
      */
     function habilitarRestauracionFoco() {
-        return inicializarRestauracionFoco(true);
+        return configurarRestauracionFoco(true);
     }
 
     /**
      * Deshabilitar el sistema de re-enfoque automático
      */
     function deshabilitarRestauracionFoco() {
-        return inicializarRestauracionFoco(false);
+        return configurarRestauracionFoco(false);
     }
 
     /**
      * Obtener la última celda enfocada
      * @returns {HTMLElement|null} - Elemento de la celda o null si no hay
      */
-    function obtenerUltimaCeldaConFoco() {
+    function leerUltimoFoco() {
         return lastFocusedCell;
     }
 
@@ -2610,7 +2610,7 @@ window.invUtils = (function (apex, $) {
      * Establecer manualmente la última celda enfocada
      * @param {HTMLElement} cellElement - Elemento de la celda
      */
-    function establecerUltimaCeldaConFoco(cellElement) {
+    function asignarUltimoFoco(cellElement) {
         if (cellElement && cellElement.classList && cellElement.classList.contains('a-GV-cell')) {
             lastFocusedCell = cellElement;
             /* console.log('invUtils: Última celda enfocada establecida manualmente'); */
@@ -2654,7 +2654,7 @@ window.invUtils = (function (apex, $) {
     /**
      * Limpiar la referencia de la última celda enfocada
      */
-    function limpiarUltimaCeldaConFoco() {
+    function limpiarReferenciaFoco() {
         lastFocusedCell = null;
         /* console.log('invUtils: Referencia de última celda enfocada limpiada'); */
     }
@@ -2663,7 +2663,7 @@ window.invUtils = (function (apex, $) {
      * Obtener el estado del sistema de re-enfoque
      * @returns {object} - Objeto con el estado del sistema
      */
-    function obtenerEstadoRestauracionFoco() {
+    function leerEstadoFoco() {
         return {
             enabled: focusRestorationEnabled,
             lastFocusedCell: lastFocusedCell,
@@ -2687,7 +2687,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refreshRegion - Si debe refrescar también la región completa (default: true)
      * @returns {boolean} - true si se refrescó correctamente
      */
-    function refrescar(gridStaticId, refreshRegion = true) {
+    function refrescarRegion(gridStaticId, refreshRegion = true) {
         try {
             console.log(`🔄 invUtils: Refrescando grid ${gridStaticId}`);
 
@@ -2716,7 +2716,7 @@ window.invUtils = (function (apex, $) {
             return true;
 
         } catch (error) {
-            console.error(`invUtils refrescar error para ${gridStaticId}:`, error);
+            console.error(`invUtils refrescarRegion error para ${gridStaticId}:`, error);
             return false;
         }
     }
@@ -2727,7 +2727,7 @@ window.invUtils = (function (apex, $) {
      * @param {object} recalculoConfig - Configuración opcional para recálculo
      * @returns {boolean} - true si se refrescó correctamente
      */
-    function refrescarYRecalcular(gridStaticId, recalculoConfig = null) {
+    function refrescarConRecalculo(gridStaticId, recalculoConfig = null) {
         try {
             const grid = apex.region(gridStaticId).call("getViews").grid;
 
@@ -2750,7 +2750,7 @@ window.invUtils = (function (apex, $) {
             return true;
 
         } catch (error) {
-            console.error('invUtils refrescarYRecalcular error:', error);
+            console.error('invUtils refrescarConRecalculo error:', error);
             return false;
         }
     }
@@ -2762,12 +2762,12 @@ window.invUtils = (function (apex, $) {
      * @param {number} delay - Delay antes del recálculo (default: 100)
      * @returns {boolean} - true si se ejecutó correctamente
      */
-    function refrescarYRecalcularColumna(gridStaticId, targetColumn = null, delay = 100) {
+    function refrescarCalculosRegistrados(gridStaticId, targetColumn = null, delay = 100) {
         try {
             console.log(`🔄 invUtils: Refrescando y recalculando ${gridStaticId}${targetColumn ? ` -> ${targetColumn}` : ''}`);
 
             // Primero refrescar el grid
-            refrescar(gridStaticId, true);
+            refrescarRegion(gridStaticId, true);
 
             // Luego recalcular si hay configuraciones automáticas
             setTimeout(() => {
@@ -2777,7 +2777,7 @@ window.invUtils = (function (apex, $) {
             return true;
 
         } catch (error) {
-            console.error(`invUtils refrescarYRecalcularColumna error para ${gridStaticId}:`, error);
+            console.error(`invUtils refrescarCalculosRegistrados error para ${gridStaticId}:`, error);
             return false;
         }
     }
@@ -2911,7 +2911,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} commitChanges - Si debe confirmar cambios antes de refrescar (default: true)
      * @returns {boolean} - true si se refrescó correctamente
      */
-    function refrescarSoloVista(gridStaticId, commitChanges = true) {
+    function refrescarVista(gridStaticId, commitChanges = true) {
         try {
             console.log(`🔄 invUtils: Refrescando solo vista de ${gridStaticId}`);
 
@@ -2962,7 +2962,7 @@ window.invUtils = (function (apex, $) {
             }
 
         } catch (error) {
-            console.error(`invUtils refrescarSoloVista error para ${gridStaticId}:`, error);
+            console.error(`invUtils refrescarVista error para ${gridStaticId}:`, error);
             return false;
         }
     }
@@ -2974,7 +2974,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refreshRegion - Si debe refrescar también la región completa (default: false)
      * @returns {boolean} - true si se refrescó correctamente
      */
-    function refrescarSeguro(gridStaticId, commitChanges = true, refreshRegion = false) {
+    function refrescarConConfirmacion(gridStaticId, commitChanges = true, refreshRegion = false) {
         try {
             console.log(`🛡️ invUtils: Refrescando grid de manera segura ${gridStaticId}`);
 
@@ -2984,7 +2984,7 @@ window.invUtils = (function (apex, $) {
             }
 
             // Refrescar solo la vista del grid
-            const viewRefreshed = refrescarSoloVista(gridStaticId, false);
+            const viewRefreshed = refrescarVista(gridStaticId, false);
 
             // Refrescar región completa solo si se especifica (y con cuidado)
             if (refreshRegion && viewRefreshed) {
@@ -3008,7 +3008,7 @@ window.invUtils = (function (apex, $) {
             return viewRefreshed;
 
         } catch (error) {
-            console.error(`invUtils refrescarSeguro error para ${gridStaticId}:`, error);
+            console.error(`invUtils refrescarConConfirmacion error para ${gridStaticId}:`, error);
             return false;
         }
     }
@@ -3019,7 +3019,7 @@ window.invUtils = (function (apex, $) {
      * @param {number} rowIndex - Índice de la fila (1 = primera fila, -1 = fila seleccionada)
      * @returns {boolean} - true si se marcó correctamente
      */
-    function forzarRegistroModificado(gridStaticId, rowIndex = -1) {
+    function marcarFila(gridStaticId, rowIndex = -1) {
         try {
             console.log(`🔄 invUtils: Forzando estado dirty en ${gridStaticId}, fila ${rowIndex}`);
 
@@ -3057,10 +3057,10 @@ window.invUtils = (function (apex, $) {
             }
 
             // Usar la función mejorada para forzar dirty state
-            return forzarEstadoModificado(model, targetRow, 'COSTO'); // Usar COSTO como columna por defecto
+            return marcarRegistro(model, targetRow, 'COSTO'); // Usar COSTO como columna por defecto
 
         } catch (error) {
-            console.error(`invUtils forzarRegistroModificado error para ${gridStaticId}:`, error);
+            console.error(`invUtils marcarFila error para ${gridStaticId}:`, error);
             return false;
         }
     }
@@ -3072,7 +3072,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Nombre de la columna (opcional)
      * @returns {boolean} - true si se marcó correctamente
      */
-    function forzarEstadoModificado(model, targetRow, columnName = null) {
+    function marcarRegistro(model, targetRow, columnName = null) {
         try {
             console.log(`🔄 invUtils: Forzando dirty state usando múltiples métodos...`);
 
@@ -3155,7 +3155,7 @@ window.invUtils = (function (apex, $) {
             return successCount > 0;
 
         } catch (error) {
-            console.error('invUtils forzarEstadoModificado error:', error);
+            console.error('invUtils marcarRegistro error:', error);
             return false;
         }
     }
@@ -3174,7 +3174,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroCeldaConConfirmacion(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true) {
+    function asignarNumeroMarcado(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true) {
         try {
             // Obtener el grid usando el método que funciona
             const grid = apex.region(gridStaticId).call("getViews").grid;
@@ -3264,7 +3264,7 @@ window.invUtils = (function (apex, $) {
             return false;
 
         } catch (error) {
-            console.error('invUtils establecerNumeroCeldaConConfirmacion error:', error);
+            console.error('invUtils asignarNumeroMarcado error:', error);
             return false;
         }
     }
@@ -3278,8 +3278,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroCeldaSeleccionadaConConfirmacion(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
-        return establecerNumeroCeldaConConfirmacion(gridStaticId, columnName, -1, value, decimalPlaces, refresh);
+    function asignarNumeroSeleccionadoMarcado(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
+        return asignarNumeroMarcado(gridStaticId, columnName, -1, value, decimalPlaces, refresh);
     }
 
     /**
@@ -3291,8 +3291,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroPrimeraCeldaConConfirmacion(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
-        return establecerNumeroCeldaConConfirmacion(gridStaticId, columnName, 1, value, decimalPlaces, refresh);
+    function asignarPrimerNumeroMarcado(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
+        return asignarNumeroMarcado(gridStaticId, columnName, 1, value, decimalPlaces, refresh);
     }
 
     /**
@@ -3305,7 +3305,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroRobusto(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true) {
+    function asignarNumeroSinFormato(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true) {
         try {
             console.log(`🔧 invUtils: Seteando valor robusto ${value} en ${columnName}, fila ${rowIndex}`);
 
@@ -3456,7 +3456,7 @@ window.invUtils = (function (apex, $) {
             return true;
 
         } catch (error) {
-            console.error('invUtils establecerNumeroRobusto error:', error);
+            console.error('invUtils asignarNumeroSinFormato error:', error);
             return false;
         }
     }
@@ -3470,8 +3470,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroSeleccionadoRobusto(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
-        return establecerNumeroRobusto(gridStaticId, columnName, -1, value, decimalPlaces, refresh);
+    function asignarNumeroSeleccionadoSinFormato(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
+        return asignarNumeroSinFormato(gridStaticId, columnName, -1, value, decimalPlaces, refresh);
     }
 
     /**
@@ -3483,8 +3483,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerPrimerNumeroRobusto(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
-        return establecerNumeroRobusto(gridStaticId, columnName, 1, value, decimalPlaces, refresh);
+    function asignarPrimerNumeroSinFormato(gridStaticId, columnName, value, decimalPlaces = null, refresh = true) {
+        return asignarNumeroSinFormato(gridStaticId, columnName, 1, value, decimalPlaces, refresh);
     }
 
     /**
@@ -3497,7 +3497,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroEuropeo(gridStaticId, columnName, rowIndex, value, decimalPlaces = 2, refresh = true) {
+    function asignarNumeroEuropeo(gridStaticId, columnName, rowIndex, value, decimalPlaces = 2, refresh = true) {
         try {
             console.log(`🇪🇺 invUtils: Seteando valor europeo ${value} en ${columnName}, fila ${rowIndex}`);
 
@@ -3605,7 +3605,7 @@ window.invUtils = (function (apex, $) {
             return true;
 
         } catch (error) {
-            console.error('invUtils establecerNumeroEuropeo error:', error);
+            console.error('invUtils asignarNumeroEuropeo error:', error);
             return false;
         }
     }
@@ -3619,8 +3619,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerNumeroSeleccionadoEuropeo(gridStaticId, columnName, value, decimalPlaces = 2, refresh = true) {
-        return establecerNumeroEuropeo(gridStaticId, columnName, -1, value, decimalPlaces, refresh);
+    function asignarNumeroSeleccionadoEuropeo(gridStaticId, columnName, value, decimalPlaces = 2, refresh = true) {
+        return asignarNumeroEuropeo(gridStaticId, columnName, -1, value, decimalPlaces, refresh);
     }
 
     /**
@@ -3632,8 +3632,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} refresh - Si debe refrescar la vista (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerPrimerNumeroEuropeo(gridStaticId, columnName, value, decimalPlaces = 2, refresh = true) {
-        return establecerNumeroEuropeo(gridStaticId, columnName, 1, value, decimalPlaces, refresh);
+    function asignarPrimerNumeroEuropeo(gridStaticId, columnName, value, decimalPlaces = 2, refresh = true) {
+        return asignarNumeroEuropeo(gridStaticId, columnName, 1, value, decimalPlaces, refresh);
     }
 
     /**
@@ -3646,7 +3646,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} forceDirty - Si debe forzar el estado dirty (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerValorCeldaComoModificado(gridStaticId, columnName, rowIndex, value, refresh = true, forceDirty = true) {
+    function asignarCeldaMarcada(gridStaticId, columnName, rowIndex, value, refresh = true, forceDirty = true) {
         try {
             console.log(`🔧 invUtils: Seteando valor con dirty ${value} en ${columnName}, fila ${rowIndex}`);
 
@@ -3697,7 +3697,7 @@ window.invUtils = (function (apex, $) {
                     console.log(`🔄 invUtils: Forzando estado dirty...`);
 
                     // Usar la función mejorada para forzar dirty state
-                    const dirtySuccess = forzarEstadoModificado(model, targetRow, columnName);
+                    const dirtySuccess = marcarRegistro(model, targetRow, columnName);
 
                     if (dirtySuccess) {
                         console.log(`✅ invUtils: Estado dirty forzado exitosamente`);
@@ -3797,7 +3797,7 @@ window.invUtils = (function (apex, $) {
             return false;
 
         } catch (error) {
-            console.error('invUtils establecerValorCeldaComoModificado error:', error);
+            console.error('invUtils asignarCeldaMarcada error:', error);
             return false;
         }
     }
@@ -3811,8 +3811,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} forceDirty - Si debe forzar el estado dirty (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerValorCeldaSeleccionadaComoModificado(gridStaticId, columnName, value, refresh = true, forceDirty = true) {
-        return establecerValorCeldaComoModificado(gridStaticId, columnName, -1, value, refresh, forceDirty);
+    function asignarCeldaSeleccionadaMarcada(gridStaticId, columnName, value, refresh = true, forceDirty = true) {
+        return asignarCeldaMarcada(gridStaticId, columnName, -1, value, refresh, forceDirty);
     }
 
     /**
@@ -3824,8 +3824,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} forceDirty - Si debe forzar el estado dirty (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerValorPrimeraCeldaComoModificado(gridStaticId, columnName, value, refresh = true, forceDirty = true) {
-        return establecerValorCeldaComoModificado(gridStaticId, columnName, 1, value, refresh, forceDirty);
+    function asignarPrimeraCeldaMarcada(gridStaticId, columnName, value, refresh = true, forceDirty = true) {
+        return asignarCeldaMarcada(gridStaticId, columnName, 1, value, refresh, forceDirty);
     }
 
     /**
@@ -3838,7 +3838,7 @@ window.invUtils = (function (apex, $) {
      * @param {number} delayBetweenAttempts - Delay entre intentos en ms (default: 200)
      * @returns {Promise<boolean>} - Promise que resuelve a true si se estableció correctamente
      */
-    function establecerValorCeldaConEstabilizacion(gridStaticId, columnName, rowIndex, value, maxAttempts = 5, delayBetweenAttempts = 200) {
+    function asignarCeldaVerificada(gridStaticId, columnName, rowIndex, value, maxAttempts = 5, delayBetweenAttempts = 200) {
         return new Promise((resolve) => {
             try {
                 console.log(`🔄 invUtils: Iniciando seteo con estabilización - ${value} en ${columnName}, fila ${rowIndex}`);
@@ -3882,7 +3882,7 @@ window.invUtils = (function (apex, $) {
                 let attempts = 0;
                 let lastValue = null;
 
-                function intentarEstablecerValor() {
+                function intentarAsignacion() {
                     attempts++;
                     console.log(`🔄 invUtils: Intento ${attempts}/${maxAttempts} - Estableciendo valor ${value}`);
 
@@ -3894,7 +3894,7 @@ window.invUtils = (function (apex, $) {
                     model.setValue(targetRow, columnName, value);
 
                     // Forzar dirty state
-                    forzarEstadoModificado(model, targetRow, columnName);
+                    marcarRegistro(model, targetRow, columnName);
 
                     // Esperar un poco y verificar si el valor se mantuvo
                     setTimeout(() => {
@@ -3922,7 +3922,7 @@ window.invUtils = (function (apex, $) {
 
                             if (attempts < maxAttempts) {
                                 console.log(`🔄 invUtils: Valor no estabilizado, reintentando...`);
-                                setTimeout(intentarEstablecerValor, delayBetweenAttempts);
+                                setTimeout(intentarAsignacion, delayBetweenAttempts);
                             } else {
                                 console.warn(`⚠️ invUtils: No se pudo estabilizar el valor después de ${maxAttempts} intentos`);
 
@@ -3940,7 +3940,7 @@ window.invUtils = (function (apex, $) {
                                     }
 
                                     // Forzar dirty state nuevamente
-                                    forzarEstadoModificado(model, targetRow, columnName);
+                                    marcarRegistro(model, targetRow, columnName);
 
                                     // Confirmar cambios
                                     confirmarCambios(gridStaticId, true, true);
@@ -3957,10 +3957,10 @@ window.invUtils = (function (apex, $) {
                 }
 
                 // Iniciar el proceso
-                intentarEstablecerValor();
+                intentarAsignacion();
 
             } catch (error) {
-                console.error('invUtils establecerValorCeldaConEstabilizacion error:', error);
+                console.error('invUtils asignarCeldaVerificada error:', error);
                 resolve(false);
             }
         });
@@ -3975,8 +3975,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} delayBetweenAttempts - Delay entre intentos en ms (default: 200)
      * @returns {Promise<boolean>} - Promise que resuelve a true si se estableció correctamente
      */
-    function establecerValorCeldaSeleccionadaConEstabilizacion(gridStaticId, columnName, value, maxAttempts = 5, delayBetweenAttempts = 200) {
-        return establecerValorCeldaConEstabilizacion(gridStaticId, columnName, -1, value, maxAttempts, delayBetweenAttempts);
+    function asignarCeldaSeleccionadaVerificada(gridStaticId, columnName, value, maxAttempts = 5, delayBetweenAttempts = 200) {
+        return asignarCeldaVerificada(gridStaticId, columnName, -1, value, maxAttempts, delayBetweenAttempts);
     }
 
     /**
@@ -3988,8 +3988,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} delayBetweenAttempts - Delay entre intentos en ms (default: 200)
      * @returns {Promise<boolean>} - Promise que resuelve a true si se estableció correctamente
      */
-    function establecerValorPrimeraCeldaConEstabilizacion(gridStaticId, columnName, value, maxAttempts = 5, delayBetweenAttempts = 200) {
-        return establecerValorCeldaConEstabilizacion(gridStaticId, columnName, 1, value, maxAttempts, delayBetweenAttempts);
+    function asignarPrimeraCeldaVerificada(gridStaticId, columnName, value, maxAttempts = 5, delayBetweenAttempts = 200) {
+        return asignarCeldaVerificada(gridStaticId, columnName, 1, value, maxAttempts, delayBetweenAttempts);
     }
 
     /**
@@ -4103,7 +4103,7 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} simulateInteraction - Si debe simular interacción del usuario (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerValorCeldaConActivacion(gridStaticId, columnName, rowIndex, value, simulateInteraction = true) {
+    function asignarCeldaActivada(gridStaticId, columnName, rowIndex, value, simulateInteraction = true) {
         try {
             console.log(`🎯 invUtils: Seteando valor con activación - ${value} en ${columnName}, fila ${rowIndex}`);
 
@@ -4114,7 +4114,7 @@ window.invUtils = (function (apex, $) {
                 // Esperar un poco para que la interacción se procese
                 setTimeout(() => {
                     // Ahora establecer el valor
-                    establecerValorCeldaComoModificado(gridStaticId, columnName, rowIndex, value, true, true);
+                    asignarCeldaMarcada(gridStaticId, columnName, rowIndex, value, true, true);
 
                     // Confirmar cambios después de un delay adicional
                     setTimeout(() => {
@@ -4124,14 +4124,14 @@ window.invUtils = (function (apex, $) {
                 }, 200);
             } else {
                 // Establecer valor directamente
-                establecerValorCeldaComoModificado(gridStaticId, columnName, rowIndex, value, true, true);
+                asignarCeldaMarcada(gridStaticId, columnName, rowIndex, value, true, true);
                 confirmarCambios(gridStaticId, true, true);
             }
 
             return true;
 
         } catch (error) {
-            console.error('invUtils establecerValorCeldaConActivacion error:', error);
+            console.error('invUtils asignarCeldaActivada error:', error);
             return false;
         }
     }
@@ -4144,8 +4144,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} simulateInteraction - Si debe simular interacción del usuario (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerValorCeldaSeleccionadaConActivacion(gridStaticId, columnName, value, simulateInteraction = true) {
-        return establecerValorCeldaConActivacion(gridStaticId, columnName, -1, value, simulateInteraction);
+    function asignarCeldaSeleccionadaActivada(gridStaticId, columnName, value, simulateInteraction = true) {
+        return asignarCeldaActivada(gridStaticId, columnName, -1, value, simulateInteraction);
     }
 
     /**
@@ -4156,8 +4156,8 @@ window.invUtils = (function (apex, $) {
      * @param {boolean} simulateInteraction - Si debe simular interacción del usuario (default: true)
      * @returns {boolean} - true si se estableció correctamente
      */
-    function establecerValorPrimeraCeldaConActivacion(gridStaticId, columnName, value, simulateInteraction = true) {
-        return establecerValorCeldaConActivacion(gridStaticId, columnName, 1, value, simulateInteraction);
+    function asignarPrimeraCeldaActivada(gridStaticId, columnName, value, simulateInteraction = true) {
+        return asignarCeldaActivada(gridStaticId, columnName, 1, value, simulateInteraction);
     }
 
     /**
@@ -4170,7 +4170,7 @@ window.invUtils = (function (apex, $) {
      * @param {number} maxRetries - Máximo número de reintentos (default: 3)
      * @returns {Promise<boolean>} - Promise que resuelve a true si se estableció correctamente
      */
-    function establecerValorCeldaRobusto(gridStaticId, columnName, rowIndex, value, refresh = true, maxRetries = 3) {
+    function asignarCeldaPausandoEventos(gridStaticId, columnName, rowIndex, value, refresh = true, maxRetries = 3) {
         return new Promise((resolve) => {
             try {
                 console.log(`🛡️ invUtils: Seteando valor robusto ${value} en ${columnName}, fila ${rowIndex}`);
@@ -4214,7 +4214,7 @@ window.invUtils = (function (apex, $) {
                 let attempts = 0;
                 let lastValue = null;
 
-                function intentarEstablecerValor() {
+                function intentarAsignacion() {
                     attempts++;
                     console.log(`🔄 invUtils: Intento ${attempts}/${maxRetries} - Estableciendo valor ${value}`);
 
@@ -4331,7 +4331,7 @@ window.invUtils = (function (apex, $) {
                                 lastValue = verifyValue;
 
                                 if (attempts < maxRetries) {
-                                    setTimeout(intentarEstablecerValor, 200);
+                                    setTimeout(intentarAsignacion, 200);
                                 } else {
                                     console.error(`❌ invUtils: No se pudo estabilizar el valor después de ${maxRetries} intentos`);
                                     resolve(false);
@@ -4343,7 +4343,7 @@ window.invUtils = (function (apex, $) {
                         console.error(`invUtils: Error en intento ${attempts}:`, error);
 
                         if (attempts < maxRetries) {
-                            setTimeout(intentarEstablecerValor, 200);
+                            setTimeout(intentarAsignacion, 200);
                         } else {
                             resolve(false);
                         }
@@ -4351,10 +4351,10 @@ window.invUtils = (function (apex, $) {
                 }
 
                 // Iniciar el proceso
-                intentarEstablecerValor();
+                intentarAsignacion();
 
             } catch (error) {
-                console.error('invUtils establecerValorCeldaRobusto error:', error);
+                console.error('invUtils asignarCeldaPausandoEventos error:', error);
                 resolve(false);
             }
         });
@@ -4369,8 +4369,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} maxRetries - Máximo número de reintentos (default: 3)
      * @returns {Promise<boolean>} - Promise que resuelve a true si se estableció correctamente
      */
-    function establecerValorCeldaSeleccionadaRobusto(gridStaticId, columnName, value, refresh = true, maxRetries = 3) {
-        return establecerValorCeldaRobusto(gridStaticId, columnName, -1, value, refresh, maxRetries);
+    function asignarCeldaSeleccionadaPausandoEventos(gridStaticId, columnName, value, refresh = true, maxRetries = 3) {
+        return asignarCeldaPausandoEventos(gridStaticId, columnName, -1, value, refresh, maxRetries);
     }
 
     /**
@@ -4382,8 +4382,8 @@ window.invUtils = (function (apex, $) {
      * @param {number} maxRetries - Máximo número de reintentos (default: 3)
      * @returns {Promise<boolean>} - Promise que resuelve a true si se estableció correctamente
      */
-    function establecerValorPrimeraCeldaRobusto(gridStaticId, columnName, value, refresh = true, maxRetries = 3) {
-        return establecerValorCeldaRobusto(gridStaticId, columnName, 1, value, refresh, maxRetries);
+    function asignarPrimeraCeldaPausandoEventos(gridStaticId, columnName, value, refresh = true, maxRetries = 3) {
+        return asignarCeldaPausandoEventos(gridStaticId, columnName, 1, value, refresh, maxRetries);
     }
 
     // =============================================================================
@@ -4396,7 +4396,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Nombre de la columna a extraer (ej: 'COD_ANIMAL').
      * @param {string} itemName - Nombre del item de página donde setear el valor (ej: 'P_COD_ANIMAL').
      */
-    function actualizarItemAlSeleccionarFila(gridStaticId, columnName, itemName) {
+    function sincronizarItemSeleccion(gridStaticId, columnName, itemName) {
         try {
             // Esperar a que el IG esté inicializado
             var region = apex.region(gridStaticId);
@@ -4406,8 +4406,8 @@ window.invUtils = (function (apex, $) {
             }
             var $ig = region.widget();
             // Evitar múltiples bindings
-            $ig.off('interactivegridselectionchange.actualizarItemAlSeleccionarFila');
-            $ig.on('interactivegridselectionchange.actualizarItemAlSeleccionarFila', function (event, ui) {
+            $ig.off('interactivegridselectionchange.sincronizarItemSeleccion');
+            $ig.on('interactivegridselectionchange.sincronizarItemSeleccion', function (event, ui) {
                 try {
                     var view = $ig.interactiveGrid('getViews', 'grid');
                     var model = view.model;
@@ -4424,12 +4424,12 @@ window.invUtils = (function (apex, $) {
                         }
                     }
                 } catch (e) {
-                    console.error('invUtils: Error en actualizarItemAlSeleccionarFila (handler):', e);
+                    console.error('invUtils: Error en sincronizarItemSeleccion (handler):', e);
                 }
             });
             return true;
         } catch (error) {
-            console.error('invUtils: Error en actualizarItemAlSeleccionarFila:', error);
+            console.error('invUtils: Error en sincronizarItemSeleccion:', error);
             return false;
         }
     }
@@ -4440,7 +4440,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Columna a extraer.
      * @param {string} itemName - Item de página a setear.
      */
-    function actualizarItemAlCambiarFilaOCelda(gridStaticId, columnName, itemName) {
+    function sincronizarItemCambios(gridStaticId, columnName, itemName) {
         try {
             var region = apex.region(gridStaticId);
             if (!region || !region.widget) {
@@ -4471,7 +4471,7 @@ window.invUtils = (function (apex, $) {
                         }
                     }
                 } catch (e) {
-                    console.error('invUtils: Error en actualizarItemAlCambiarFilaOCelda (selection handler):', e);
+                    console.error('invUtils: Error en sincronizarItemCambios (selection handler):', e);
                 }
             });
 
@@ -4493,7 +4493,7 @@ window.invUtils = (function (apex, $) {
 
             return true;
         } catch (error) {
-            console.error('invUtils: Error en actualizarItemAlCambiarFilaOCelda:', error);
+            console.error('invUtils: Error en sincronizarItemCambios:', error);
             return false;
         }
     }
@@ -4505,7 +4505,7 @@ window.invUtils = (function (apex, $) {
      * @param {any} value - Valor a asignar.
      * @returns {boolean} - true si se asignó correctamente, false en caso contrario.
      */
-    function establecerValorEnFilaSeleccionada(gridStaticId, columnName, value) {
+    function asignarColumnaSeleccionada(gridStaticId, columnName, value) {
         try {
             // Obtener el Interactive Grid usando el método que funciona (como cargarDatos)
             var grid = apex.region(gridStaticId).call("getViews").grid;
@@ -4534,7 +4534,7 @@ window.invUtils = (function (apex, $) {
 
             return true;
         } catch (error) {
-            console.error('invUtils: Error en establecerValorEnFilaSeleccionada:', error);
+            console.error('invUtils: Error en asignarColumnaSeleccionada:', error);
             return false;
         }
     }
@@ -4545,7 +4545,7 @@ window.invUtils = (function (apex, $) {
      * @param {function} callback - Función opcional a ejecutar después de seleccionar la primera fila.
      * @returns {boolean} - true si se configuró correctamente, false en caso contrario.
      */
-    function seleccionarPrimeraFilaAlIniciar(gridStaticId, callback) {
+    function seleccionarFilaInicial(gridStaticId, callback) {
         try {
             // Obtener el Interactive Grid usando el método que funciona (como cargarDatos)
             var grid = apex.region(gridStaticId).call("getViews").grid;
@@ -4604,7 +4604,7 @@ window.invUtils = (function (apex, $) {
 
             return true;
         } catch (error) {
-            console.error('invUtils: Error en seleccionarPrimeraFilaAlIniciar:', error);
+            console.error('invUtils: Error en seleccionarFilaInicial:', error);
             return false;
         }
     }
@@ -4619,7 +4619,7 @@ window.invUtils = (function (apex, $) {
      * @returns {boolean} - true si se configuró correctamente, false en caso contrario.
      */
     // Función simplificada: solo sincroniza de Grid → Item (cuando seleccionas una fila)
-    function sincronizarConItem(gridStaticId, columnName, itemName, options) {
+    function sincronizarItem(gridStaticId, columnName, itemName, options) {
         try {
             options = options || {};
             var syncId = 'sync_grid_to_item_' + gridStaticId + '_' + columnName + '_' + itemName;
@@ -4652,7 +4652,7 @@ window.invUtils = (function (apex, $) {
             model.unsubscribe && model.unsubscribe(syncId + '_cell');
 
             // Función para actualizar el item con el valor de la columna
-            var actualizarItemDesdeGrilla = function (record) {
+            var asignarItem = function (record) {
                 try {
                     var raw = model.getValue(record, columnName);
                     // Si la columna es Popup LOV, el modelo puede devolver {v, d}
@@ -4689,7 +4689,7 @@ window.invUtils = (function (apex, $) {
             var manejarCambioSeleccion = function (selectedRecords) {
                 try {
                     if (selectedRecords && selectedRecords.length > 0) {
-                        actualizarItemDesdeGrilla(selectedRecords[0]);
+                        asignarItem(selectedRecords[0]);
 
                         if (options.debug) {
                             console.log('invUtils: Selección cambiada, registros:', selectedRecords.length);
@@ -4730,7 +4730,7 @@ window.invUtils = (function (apex, $) {
                             });
 
                             if (isSelected) {
-                                actualizarItemDesdeGrilla(change.record);
+                                asignarItem(change.record);
 
                                 if (options.debug) {
                                     console.log('invUtils: Celda cambiada en fila seleccionada');
@@ -4748,7 +4748,7 @@ window.invUtils = (function (apex, $) {
                 try {
                     var selectedRecords = grid.getSelectedRecords && grid.getSelectedRecords();
                     if (selectedRecords && selectedRecords.length > 0) {
-                        actualizarItemDesdeGrilla(selectedRecords[0]);
+                        asignarItem(selectedRecords[0]);
 
                         if (options.debug) {
                             console.log('invUtils: Sincronización inicial completada');
@@ -4777,7 +4777,7 @@ window.invUtils = (function (apex, $) {
 
             return true;
         } catch (error) {
-            console.error('invUtils: Error en sincronizarConItem:', error);
+            console.error('invUtils: Error en sincronizarItem:', error);
             return false;
         }
     }
@@ -4826,7 +4826,7 @@ window.invUtils = (function (apex, $) {
             var isSyncing = false; // evitar bucles accidentales
 
             // Función para setear en la fila seleccionada
-            var establecerValorEnFilaSeleccionada = function (value) {
+            var asignarColumnaSeleccionada = function (value) {
                 try {
                     var selectedRecords = grid.getSelectedRecords && grid.getSelectedRecords();
                     if (!selectedRecords || selectedRecords.length === 0) {
@@ -4879,7 +4879,7 @@ window.invUtils = (function (apex, $) {
                     var itemValue = apexItem && typeof apexItem.getValue === 'function'
                         ? apexItem.getValue()
                         : ($item && $item.val ? $item.val() : null);
-                    establecerValorEnFilaSeleccionada(itemValue);
+                    asignarColumnaSeleccionada(itemValue);
                 } catch (e) {
                     console.error('invUtils: Error en handler de cambio del item:', e);
                 }
@@ -4892,7 +4892,7 @@ window.invUtils = (function (apex, $) {
                         var initialValue = apexItem && typeof apexItem.getValue === 'function'
                             ? apexItem.getValue()
                             : ($item && $item.val ? $item.val() : null);
-                        establecerValorEnFilaSeleccionada(initialValue);
+                        asignarColumnaSeleccionada(initialValue);
                     } catch (e) {
                         console.warn('invUtils: Error en sincronización inicial Item → Grid:', e);
                     }
@@ -4933,7 +4933,7 @@ window.invUtils = (function (apex, $) {
             var asPopupLov = options.asPopupLov === true; // si la columna es Popup LOV
 
             // Configurar Grid → Item
-            var ok1 = sincronizarConItem(gridStaticId, columnName, itemName, { debug: debug });
+            var ok1 = sincronizarItem(gridStaticId, columnName, itemName, { debug: debug });
 
             // Configurar Item → Grid
             var ok2 = sincronizarDesdeItem(gridStaticId, columnName, itemName, { debug: debug, pushInitial: pushItemToGrid, asPopupLov: asPopupLov });
@@ -4992,7 +4992,7 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Nombre de la columna a monitorear (opcional)
      * @returns {object} - Objeto con funciones de control del debug
      */
-    function depurar(gridStaticId, columnName = null) {
+    function depurarCambios(gridStaticId, columnName = null) {
         try {
             console.log(`🔍 invUtils: Iniciando debug completo para ${gridStaticId}${columnName ? ` -> ${columnName}` : ''}`);
 
@@ -5010,7 +5010,7 @@ window.invUtils = (function (apex, $) {
             };
 
             // Función para obtener valor actual
-            function obtenerValorActual(record, col) {
+            function leerValorActual(record, col) {
                 try {
                     return model.getValue(record, col);
                 } catch (e) {
@@ -5067,7 +5067,7 @@ window.invUtils = (function (apex, $) {
                         }
 
                         if (record) {
-                            const currentValue = obtenerValorActual(record, change.field);
+                            const currentValue = leerValorActual(record, change.field);
                             const previousValue = previousValues.get(`${record.id}_${change.field}`);
 
                             if (previousValue !== currentValue) {
@@ -5092,7 +5092,7 @@ window.invUtils = (function (apex, $) {
             });
 
             // Función para obtener estado actual
-            function obtenerEstadoActual() {
+            function leerEstadoActual() {
                 try {
                     const state = {
                         timestamp: new Date(),
@@ -5111,7 +5111,7 @@ window.invUtils = (function (apex, $) {
                         recordCount++;
 
                         if (columnName) {
-                            const value = obtenerValorActual(record, columnName);
+                            const value = leerValorActual(record, columnName);
                             state.columnValues[`record_${recordCount}`] = {
                                 id: record.id,
                                 value: value,
@@ -5154,7 +5154,7 @@ window.invUtils = (function (apex, $) {
                     const array = grid.getSelectedRecords();
                     if (array && array.length > 0) {
                         const targetRow = array[0][1];
-                        const currentValue = obtenerValorActual(targetRow, columnName || 'COSTO');
+                        const currentValue = leerValorActual(targetRow, columnName || 'COSTO');
                         const newValue = parseFloat(currentValue || 0) + 0.01;
 
                         console.log(`🎯 invUtils DEBUG: Cambiando ${columnName || 'COSTO'} de ${currentValue} a ${newValue}`);
@@ -5207,10 +5207,10 @@ window.invUtils = (function (apex, $) {
             }
 
             // Función para obtener resumen
-            function obtenerResumen() {
+            function leerResumen() {
                 return {
                     ...debugInfo,
-                    currentState: obtenerEstadoActual(),
+                    currentState: leerEstadoActual(),
                     runtime: new Date() - debugInfo.startTime
                 };
             }
@@ -5218,7 +5218,7 @@ window.invUtils = (function (apex, $) {
             // Inicializar valores anteriores
             model.forEach(function (record) {
                 if (columnName) {
-                    const value = obtenerValorActual(record, columnName);
+                    const value = leerValorActual(record, columnName);
                     previousValues.set(`${record.id}_${columnName}`, value);
                 }
             });
@@ -5229,15 +5229,15 @@ window.invUtils = (function (apex, $) {
 
             // Retornar funciones de control
             return {
-                obtenerEstadoActual: obtenerEstadoActual,
+                leerEstadoActual: leerEstadoActual,
                 simularCambioManual: simularCambioManual,
                 detenerDepuracion: detenerDepuracion,
-                obtenerResumen: obtenerResumen,
+                leerResumen: leerResumen,
                 debugInfo: debugInfo
             };
 
         } catch (error) {
-            console.error('invUtils depurar error:', error);
+            console.error('invUtils depurarCambios error:', error);
             return null;
         }
     }
@@ -5257,7 +5257,7 @@ window.invUtils = (function (apex, $) {
         agregarImpuesto: (values, priceCol, taxPercent = 10) => values[priceCol] * (1 + taxPercent / 100),
 
         // Subtotal con descuento
-        subtotalConDescuento: (values, qtyCol, priceCol, discountCol) => {
+        calcularSubtotal: (values, qtyCol, priceCol, discountCol) => {
             const subtotal = values[qtyCol] * values[priceCol];
             return subtotal * (1 - values[discountCol] / 100);
         },
@@ -5279,7 +5279,7 @@ window.invUtils = (function (apex, $) {
         /**
          * Configurar multiplicación simple (cantidad × precio = total)
          */
-        multiplicarColumnas: function (gridStaticId, col1, col2, targetCol, decimalPlaces = 2) {
+        configurarProducto: function (gridStaticId, col1, col2, targetCol, decimalPlaces = 2) {
             return configurarCalculoAutomatico(gridStaticId, {
                 sourceColumns: [col1, col2],
                 targetColumn: targetCol,
@@ -5293,7 +5293,7 @@ window.invUtils = (function (apex, $) {
         /**
          * Configurar precio con IVA
          */
-        precioConImpuesto: function (gridStaticId, priceCol, targetCol, taxPercent = 10, decimalPlaces = 2) {
+        configurarImpuesto: function (gridStaticId, priceCol, targetCol, taxPercent = 10, decimalPlaces = 2) {
             return configurarCalculoAutomatico(gridStaticId, {
                 sourceColumns: [priceCol],
                 targetColumn: targetCol,
@@ -5307,7 +5307,7 @@ window.invUtils = (function (apex, $) {
         /**
          * Configurar subtotal con descuento
          */
-        subtotalConDescuento: function (gridStaticId, qtyCol, priceCol, discountCol, targetCol, decimalPlaces = 2) {
+        configurarDescuento: function (gridStaticId, qtyCol, priceCol, discountCol, targetCol, decimalPlaces = 2) {
             return configurarCalculoAutomatico(gridStaticId, {
                 sourceColumns: [qtyCol, priceCol, discountCol],
                 targetColumn: targetCol,
@@ -5438,7 +5438,7 @@ window.invUtils = (function (apex, $) {
     /**
      * Obtener el registro activo del grid
      */
-    function obtenerContextoRegistro(gridStaticId) {
+    function leerContextoRegistro(gridStaticId) {
         try {
             const region = apex.region(gridStaticId);
             if (!region.widget) {
@@ -5503,7 +5503,7 @@ window.invUtils = (function (apex, $) {
 
     // Se conserva la inicialización automática del foco de la biblioteca original.
     setTimeout(() => {
-        inicializarRestauracionFoco(true);
+        configurarRestauracionFoco(true);
     }, 100);
 
     // =============================================================================
@@ -5512,23 +5512,26 @@ window.invUtils = (function (apex, $) {
 
     // 1. Implementar la función arriba, en GENERAL, ITEM o GRID, con JSDoc.
     // 2. Agregar su nombre al objeto correspondiente de este return.
-    //    Ejemplo: obtenerTexto dentro de item se usa como invUtils.item.obtenerTexto(...).
+    //    Ejemplo: leerTexto dentro de item se usa como invUtils.item.leerTexto(...).
     // 3. Si es un auxiliar interno, NO agregarlo aquí.
-    // 4. Documentar firma, retorno y ejemplo en README.md. No traducir métodos de APEX.
+    // 4. Aplicar las reglas de nombres del README: leer/asignar, verbo + objeto,
+    //    tres palabras preferidas y excepciones justificadas por el comportamiento.
+    // 5. Documentar firma, retorno y ejemplo en README.md. No traducir métodos de APEX.
     return {
-        alerta,
+        mostrarAlerta,
         posponerEjecucion,
         cancelarEjecucionPendiente,
         ejecutarSiCambia,
         cancelarEjecucionesPendientes,
         normalizarNumero,
+        formatearNumero: formatearNumeroEuropeo,
         formatearNumeroEuropeo,
-        convertirAFormatoEuropeo,
+        convertirNumeroEuropeo,
 
         item: {
-            obtenerNumero,
-            obtener,
-            obtenerNumeros
+            leerNumero,
+            leerValorNumerico,
+            leerNumeros
         },
 
         grid: {
@@ -5538,118 +5541,118 @@ window.invUtils = (function (apex, $) {
             extraerCampos,
             cargarDatos,
             cargarDatosDirectos,
-            cargarDatosDesdeItem,
+            cargarDesdeItem,
 
             // Cálculos y configuración
             configurarCalculoAutomatico,
-            calcular,
-            configurarCantidadPorCosto,
+            calcularColumnas,
+            configurarMultiplicacion,
             asegurarCalculoAutomatico,
             asegurarFormatoDecimal,
-            sumarColumnaEnItem,
-            sumarTotalEnItem,
+            sumarColumna,
+            sumarTotal,
             escucharCambios,
             forzarRecalculo,
             actualizarCalculoAutomatico,
-            obtenerConfiguracionCalculo,
+            leerConfiguracionCalculo,
             eliminarConfiguracionCalculo,
-            obtenerConfiguracionesCalculo,
+            leerConfiguracionesCalculo,
             estaInicializado,
-            inicializar,
+            inicializarModulo,
             recalcularFilas,
 
             // Lectura de valores
-            obtenerValorColumna,
-            obtenerValorCelda,
-            obtenerValorCeldaSeleccionada,
-            obtenerValorPrimeraCelda,
-            obtenerFilaActual,
-            obtenerNumeroCelda,
-            obtenerNumeroCeldaSeleccionada,
-            obtenerNumeroPrimeraCelda,
-            obtenerNumeroCeldaConDecimales,
-            obtenerNumeroCeldaSeleccionadaConDecimales,
-            obtenerNumeroPrimeraCeldaConDecimales,
-            obtenerEnteroCelda,
-            obtenerEnteroCeldaSeleccionada,
-            obtenerEnteroPrimeraCelda,
+            leerColumna,
+            leerCelda,
+            leerCeldaSeleccionada,
+            leerPrimeraCelda,
+            leerFilaActual,
+            leerNumeroCelda,
+            leerNumeroSeleccionado,
+            leerPrimerNumero,
+            leerNumeroRedondeado,
+            leerNumeroSeleccionadoRedondeado,
+            leerPrimerNumeroRedondeado,
+            leerEnteroCelda,
+            leerEnteroSeleccionado,
+            leerPrimerEntero,
 
             // Asignación de valores
-            establecerValorColumna,
-            establecerValorCelda,
-            establecerValorCeldaSeleccionada,
-            establecerValorPrimeraCelda,
+            asignarColumna,
+            asignarCelda,
+            asignarCeldaSeleccionada,
+            asignarPrimeraCelda,
             limpiarCeldasSeleccionadas,
-            establecerNumeroCelda,
-            establecerNumeroCeldaSeleccionada,
-            establecerNumeroPrimeraCelda,
-            establecerEnteroCelda,
-            establecerEnteroCeldaSeleccionada,
-            establecerEnteroPrimeraCelda,
-            establecerValorYRecalcular,
-            establecerValorSeleccionadoYRecalcular,
-            establecerPrimerValorYRecalcular,
-            establecerValorEnFilas,
-            establecerValorFijoEnFilas,
+            asignarNumeroCelda,
+            asignarNumeroSeleccionado,
+            asignarPrimerNumero,
+            asignarEnteroCelda,
+            asignarEnteroSeleccionado,
+            asignarPrimerEntero,
+            asignarCeldaConRecalculo,
+            asignarCeldaSeleccionadaConRecalculo,
+            asignarPrimeraCeldaConRecalculo,
+            asignarFilas,
+            asignarValorFilas,
 
             // Navegación y foco
-            cursorCelda,
+            irACelda,
             irAPrimeraCelda,
-            cursorCeldaSeleccionada,
-            inicializarRestauracionFoco,
+            irACeldaSeleccionada,
+            configurarRestauracionFoco,
             habilitarRestauracionFoco,
             deshabilitarRestauracionFoco,
-            obtenerUltimaCeldaConFoco,
-            establecerUltimaCeldaConFoco,
+            leerUltimoFoco,
+            asignarUltimoFoco,
             restaurarFoco,
-            limpiarUltimaCeldaConFoco,
-            obtenerEstadoRestauracionFoco,
+            limpiarReferenciaFoco,
+            leerEstadoFoco,
 
             // Refresco y confirmación del modelo
-            refrescar,
-            refrescarYRecalcular,
-            refrescarYRecalcularColumna,
+            refrescarRegion,
+            refrescarConRecalculo,
+            refrescarCalculosRegistrados,
             confirmarCambios,
-            refrescarSoloVista,
-            refrescarSeguro,
-            forzarRegistroModificado,
-            forzarEstadoModificado,
+            refrescarVista,
+            refrescarConConfirmacion,
+            marcarFila,
+            marcarRegistro,
 
             // Variantes de asignación existentes
-            establecerNumeroCeldaConConfirmacion,
-            establecerNumeroCeldaSeleccionadaConConfirmacion,
-            establecerNumeroPrimeraCeldaConConfirmacion,
-            establecerNumeroRobusto,
-            establecerNumeroSeleccionadoRobusto,
-            establecerPrimerNumeroRobusto,
-            establecerNumeroEuropeo,
-            establecerNumeroSeleccionadoEuropeo,
-            establecerPrimerNumeroEuropeo,
-            establecerValorCeldaComoModificado,
-            establecerValorCeldaSeleccionadaComoModificado,
-            establecerValorPrimeraCeldaComoModificado,
-            establecerValorCeldaConEstabilizacion,
-            establecerValorCeldaSeleccionadaConEstabilizacion,
-            establecerValorPrimeraCeldaConEstabilizacion,
+            asignarNumeroMarcado,
+            asignarNumeroSeleccionadoMarcado,
+            asignarPrimerNumeroMarcado,
+            asignarNumeroSinFormato,
+            asignarNumeroSeleccionadoSinFormato,
+            asignarPrimerNumeroSinFormato,
+            asignarNumeroEuropeo,
+            asignarNumeroSeleccionadoEuropeo,
+            asignarPrimerNumeroEuropeo,
+            asignarCeldaMarcada,
+            asignarCeldaSeleccionadaMarcada,
+            asignarPrimeraCeldaMarcada,
+            asignarCeldaVerificada,
+            asignarCeldaSeleccionadaVerificada,
+            asignarPrimeraCeldaVerificada,
             simularInteraccionUsuario,
-            establecerValorCeldaConActivacion,
-            establecerValorCeldaSeleccionadaConActivacion,
-            establecerValorPrimeraCeldaConActivacion,
-            establecerValorCeldaRobusto,
-            establecerValorCeldaSeleccionadaRobusto,
-            establecerValorPrimeraCeldaRobusto,
+            asignarCeldaActivada,
+            asignarCeldaSeleccionadaActivada,
+            asignarPrimeraCeldaActivada,
+            asignarCeldaPausandoEventos,
+            asignarCeldaSeleccionadaPausandoEventos,
+            asignarPrimeraCeldaPausandoEventos,
 
             // Selección y sincronización con ítems
-            actualizarItemAlSeleccionarFila,
-            actualizarItemAlCambiarFilaOCelda,
-            establecerValorEnFilaSeleccionada,
-            seleccionarPrimeraFilaAlIniciar,
-            sincronizarConItem,
+            sincronizarItemSeleccion,
+            sincronizarItemCambios,
+            asignarColumnaSeleccionada,
+            seleccionarFilaInicial,
+            sincronizarItem,
             sincronizarDesdeItem,
             sincronizarItemBidireccional,
 
             // Diagnóstico
-            depurar,
+            depurarCambios,
 
             formulas,
             configuracionesRapidas

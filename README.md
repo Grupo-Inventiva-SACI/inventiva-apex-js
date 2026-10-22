@@ -18,20 +18,20 @@ Ejemplo didáctico de una futura función (no incluida actualmente):
  * @param {string} nombreItem - Nombre del ítem, por ejemplo P10_OBSERVACION.
  * @returns {string|string[]} Valor devuelto por el ítem.
  */
-function obtenerValorItem(nombreItem) {
+function leerValorItem(nombreItem) {
     return apex.item(nombreItem).getValue();
 }
 
 // En el return final, agregar una propiedad a item:
 item: {
-    obtenerNumero,
-    obtener,
-    obtenerNumeros,
-    obtenerValor: obtenerValorItem
+    leerNumero,
+    leerValorNumerico,
+    leerNumeros,
+    leerValor: leerValorItem
 }
 
 // Después de publicarla, desde una Dynamic Action:
-const observacion = invUtils.item.obtenerValor("P10_OBSERVACION");
+const observacion = invUtils.item.leerValor("P10_OBSERVACION");
 ```
 
 El nombre de la propiedad pública puede ser distinto al nombre interno. El ejemplo utiliza esa posibilidad para evitar colisiones entre funciones del módulo. Las funciones internas no necesitan añadirse a `window`.
@@ -68,6 +68,42 @@ Prioridad: **precisión → consistencia → brevedad**. Estas reglas se aplican
 
 No usar estos verbos como sinónimos intercambiables: `enfocar`, `seleccionar` e `ir` describen operaciones diferentes. Las funciones existentes que realizan varias acciones deben documentar esas acciones aunque su nombre no las enumere.
 
+### Excepciones de longitud
+
+El límite de tres palabras es recomendado. Se conservan estas excepciones para mantener las firmas existentes sin confundir selección, posición, formato o efectos:
+
+| Distinción necesaria | Nombres |
+|---|---|
+| Navegación y destino | `irAPrimeraCelda`, `irACeldaSeleccionada` |
+| Posición y redondeo | `leerNumeroSeleccionadoRedondeado`, `leerPrimerNumeroRedondeado` |
+| Asignación seguida de recálculo | `asignarCeldaConRecalculo`, `asignarCeldaSeleccionadaConRecalculo`, `asignarPrimeraCeldaConRecalculo` |
+| Posición y marcado numérico | `asignarNumeroSeleccionadoMarcado`, `asignarPrimerNumeroMarcado` |
+| Desactivación temporal del formato | `asignarNumeroSinFormato`, `asignarNumeroSeleccionadoSinFormato`, `asignarPrimerNumeroSinFormato` |
+| Posición y formato europeo | `asignarNumeroSeleccionadoEuropeo`, `asignarPrimerNumeroEuropeo` |
+| Posición y marcado de cambios | `asignarCeldaSeleccionadaMarcada`, `asignarPrimeraCeldaMarcada` |
+| Posición y verificación | `asignarCeldaSeleccionadaVerificada`, `asignarPrimeraCeldaVerificada` |
+| Posición y activación | `asignarCeldaSeleccionadaActivada`, `asignarPrimeraCeldaActivada` |
+| Pausa temporal de notificaciones del modelo | `asignarCeldaPausandoEventos`, `asignarCeldaSeleccionadaPausandoEventos`, `asignarPrimeraCeldaPausandoEventos` |
+
+Para las funciones nuevas, intentar primero una firma sencilla con parámetros explícitos. No multiplicar variantes solo para incorporar cada opción en el nombre. Las funciones matemáticas `multiplicar`, `sumar` y `promediar` omiten el objeto porque los valores y columnas se indican como argumentos dentro de `grid.formulas`.
+
+### Significado de las variantes existentes
+
+Estos nombres describen mecanismos; no garantizan que Oracle APEX acepte todos los métodos opcionales usados por la implementación heredada.
+
+| Función o familia | Comportamiento que se conserva |
+|---|---|
+| `asignarCeldaConRecalculo` y sus variantes | Asignan el valor y programan el recálculo si se proporciona `recalculoConfig`; respetan la opción de refresco. |
+| `refrescarConRecalculo` | Refresca la vista y programa el cálculo recibido, cuando existe. |
+| `refrescarCalculosRegistrados` | Refresca la región y programa los cálculos previamente configurados. Conserva la llamada a `clearChanges()` del refresco. |
+| `refrescarConConfirmacion` | Puede confirmar cambios en el modelo antes de refrescar la vista; el refresco completo de la región es opcional. |
+| `asignarNumeroMarcado` y sus variantes | Asignan un número e intentan marcar o actualizar el registro con los métodos disponibles. |
+| `asignarNumeroSinFormato` y sus variantes | Intentan desactivar temporalmente el formato del modelo mediante `disableFormatting`, asignan el número y restauran esa opción. |
+| `asignarCeldaMarcada` y sus variantes | Asignan el valor e intentan marcar los cambios según `forceDirty`. |
+| `asignarCeldaVerificada` y sus variantes | Verifican el valor y realizan reintentos; devuelven una promesa y conservan las condiciones originales de éxito. |
+| `asignarCeldaActivada` y sus variantes | Pueden simular la interacción con la celda antes de asignar el valor. |
+| `asignarCeldaPausandoEventos` y sus variantes | Intentan suspender temporalmente los listeners internos del modelo, restaurarlos y verificar el valor con reintentos. No suspenden todos los eventos de la página. |
+
 ## Objetivo y versiones de referencia
 
 Este paquete está 100% enfocado al uso en Oracle APEX, desde la versión 24.1 hasta la versión 26.1, posterior a esas versiones requerirá nueva validación para su uso.
@@ -96,9 +132,9 @@ Referencias oficiales: [JavaScript en APEX 24.1](https://docs.oracle.com/en/data
 
 | Acceso | Responsabilidad | Ejemplo |
 |---|---|---|
-| `invUtils` | Alertas, números y control de ejecuciones | `invUtils.alerta(200, "Proceso completado")` |
-| `invUtils.item` | Lectura numérica de ítems de página | `invUtils.item.obtenerNumero("P10_TOTAL")` |
-| `invUtils.grid` | Interactive Grids, cálculos, navegación y sincronización con ítems | `invUtils.grid.obtenerValorCelda("Prima", "MONTO_TOTAL", 1)` |
+| `invUtils` | Alertas, números y control de ejecuciones | `invUtils.mostrarAlerta(200, "Proceso completado")` |
+| `invUtils.item` | Lectura numérica de ítems de página | `invUtils.item.leerNumero("P10_TOTAL")` |
+| `invUtils.grid` | Interactive Grids, cálculos, navegación y sincronización con ítems | `invUtils.grid.leerCelda("Prima", "MONTO_TOTAL", 1)` |
 
 Solo se publica `window.invUtils`. Los temporizadores, configuraciones, valores anteriores y auxiliares quedan dentro del módulo. El listado del `return` final es la fuente de verdad de la API pública.
 
@@ -111,12 +147,12 @@ Se conservaron los parámetros, opciones y datos devueltos por las funciones exi
 ### Alertas, números e ítems
 
 ```javascript
-invUtils.alerta(200, "Proceso completado");
-invUtils.alerta(500, "No se pudo completar el proceso");
+invUtils.mostrarAlerta(200, "Proceso completado");
+invUtils.mostrarAlerta(500, "No se pudo completar el proceso");
 
 // El ítem contiene un texto con formato europeo, por ejemplo "1.234,56".
-const importe = invUtils.item.obtenerNumero("P10_TOTAL", 0);
-const [costo, cantidad] = invUtils.item.obtenerNumeros([
+const importe = invUtils.item.leerNumero("P10_TOTAL", 0);
+const [costo, cantidad] = invUtils.item.leerNumeros([
     "P10_COSTO", "P10_CANTIDAD"
 ]);
 
@@ -128,7 +164,7 @@ invUtils.posponerEjecucion("recalcular_total", function () {
 }, 300);
 ```
 
-`item.obtener` es una abreviatura de `item.obtenerNumero`; también devuelve un número. No es un lector genérico de texto. `obtenerNumero` conserva la interpretación europea: elimina puntos de miles y usa la coma decimal. No debe usarse para un ítem cuyo texto utiliza el punto como separador decimal. `normalizarNumero` conserva sus heurísticas originales y no sustituye una conversión explícita según NLS.
+`item.leerValorNumerico` es un nombre alternativo de `item.leerNumero`; también devuelve un número. No es un lector genérico de texto. `leerNumero` conserva la interpretación europea: elimina puntos de miles y usa la coma decimal. No debe usarse para un ítem cuyo texto utiliza el punto como separador decimal. `normalizarNumero` conserva sus heurísticas originales y no sustituye una conversión explícita según NLS.
 
 En JavaScript, un número se escribe `1234.56`. El valor con formato europeo se escribe como texto: `"1.234,56"`. Escribir `1.234,56` sin comillas en una llamada pasa dos argumentos distintos.
 
@@ -136,14 +172,14 @@ En JavaScript, un número se escribe `1234.56`. El valor con formato europeo se 
 
 ```javascript
 // "Prima" es el Static ID de la región; "MONTO_TOTAL" es el nombre de columna.
-const valor = invUtils.grid.obtenerValorCelda("Prima", "MONTO_TOTAL", 1);
-const seleccionado = invUtils.grid.obtenerValorCeldaSeleccionada("Prima", "MONTO_TOTAL");
+const valor = invUtils.grid.leerCelda("Prima", "MONTO_TOTAL", 1);
+const seleccionado = invUtils.grid.leerCeldaSeleccionada("Prima", "MONTO_TOTAL");
 
-invUtils.grid.establecerValorCelda("Prima", "MONTO_TOTAL", 1, "1.234,56");
-invUtils.grid.establecerValorCeldaSeleccionada("Prima", "IND_NO_INCLUIR", "S");
+invUtils.grid.asignarCelda("Prima", "MONTO_TOTAL", 1, "1.234,56");
+invUtils.grid.asignarCeldaSeleccionada("Prima", "IND_NO_INCLUIR", "S");
 ```
 
-Las funciones de acceso por índice utilizan `1` para la primera fila y `-1` para la selección. Operan sobre los registros cargados en el modelo; no implican obtener todas las filas del servidor. `obtenerFilaActual` utiliza el contexto del elemento con foco y requiere indicar las columnas.
+Las funciones de acceso por índice utilizan `1` para la primera fila y `-1` para la selección. Operan sobre los registros cargados en el modelo; no implican obtener todas las filas del servidor. `leerFilaActual` utiliza el contexto del elemento con foco y requiere indicar las columnas.
 
 ### Cálculos automáticos
 
@@ -160,7 +196,7 @@ invUtils.grid.configurarCalculoAutomatico("Prima", {
 });
 
 // Alternativa para cantidad × costo:
-// invUtils.grid.configurarCantidadPorCosto("Prima", "CANTIDAD", "COSTO", "TOTAL", 2);
+// invUtils.grid.configurarMultiplicacion("Prima", "CANTIDAD", "COSTO", "TOTAL", 2);
 ```
 
 Elegir una sola configuración para el mismo cálculo. Las suscripciones se vinculan al modelo disponible al configurarlas; probar su ciclo de vida si la página reemplaza el modelo. `estaInicializado` solo comprueba el almacén interno de configuraciones, no que una región de APEX está lista.
@@ -169,7 +205,7 @@ Elegir una sola configuración para el mismo cálculo. Las suscripciones se vinc
 
 ```javascript
 // Selección/cambios de la grilla → ítem de página.
-invUtils.grid.sincronizarConItem("Prima", "MONTO_TOTAL", "P10_TOTAL");
+invUtils.grid.sincronizarItem("Prima", "MONTO_TOTAL", "P10_TOTAL");
 
 // Alternativa: sincronización en ambas direcciones.
 // invUtils.grid.sincronizarItemBidireccional("Prima", "MONTO_TOTAL", "P10_TOTAL", {
@@ -213,8 +249,8 @@ if (resultado.success) {
 El cambio organiza y renombra la biblioteca existente; no certifica el comportamiento completo de todos sus métodos en APEX 24.1 o 26.1. Antes de publicar, validar en ambas versiones las operaciones usadas por la aplicación. Se conservan variantes históricas que intentan métodos opcionales como `markDirty`, `commitRecord` o `commit`, y accesos a datos internos como `_meta`; no deben tomarse como una garantía de API pública de Oracle.
 
 - Para nuevas funciones, preferir las APIs documentadas: [modelo 24.1](https://docs.oracle.com/en/database/oracle/apex/24.1/aexjs/model.html), [modelo 26.1](https://docs.oracle.com/en/database/oracle/apex/26.1/aexjs/model.html), [grid 24.1](https://docs.oracle.com/en/database/oracle/apex/24.1/aexjs/grid.html), [grid 26.1](https://docs.oracle.com/en/database/oracle/apex/26.1/aexjs/grid.html).
-- Los métodos `confirmarCambios` y las variantes `ConConfirmacion` conservan su lógica anterior. Su nombre no implica un guardado confirmado en base de datos. Probar el guardado real mediante el flujo de APEX.
-- `refrescar` y `refrescarSeguro`, cuando se solicita refrescar la región completa, conservan una llamada a `model.clearChanges()` antes del refresco. No utilizarlos como sustituto de guardar los cambios pendientes.
+- Los métodos `confirmarCambios` y las variantes `asignarNumeroMarcado`, `asignarNumeroSeleccionadoMarcado` y `asignarPrimerNumeroMarcado` conservan su lógica anterior. Su nombre no implica un guardado confirmado en base de datos. Probar el guardado real mediante el flujo de APEX.
+- `refrescarRegion` y `refrescarConConfirmacion`, cuando se solicita refrescar la región completa, conservan una llamada a `model.clearChanges()` antes del refresco. No utilizarlos como sustituto de guardar los cambios pendientes.
 - No asumir que una fila seleccionada es la fila en edición. Algunas variantes heredadas interpretan de manera diferente la selección; validarlas antes de elegirlas para una nueva página.
 - Las operaciones diferidas, como `recalcularFilas`, usan temporizadores y no devuelven una promesa que permita esperar su finalización.
 - Se conserva la activación automática de restauración de foco a los 100 ms de cargar el archivo. Para deshabilitarla, llamar `invUtils.grid.deshabilitarRestauracionFoco()` después de esa inicialización.
@@ -230,14 +266,14 @@ Prefijo: `invUtils.`
 
 | Firma actual | Nombre anterior |
 |---|---|
-| `alerta(status, mensaje)` | `customAlert` |
+| `mostrarAlerta(status, mensaje)` | `customAlert` |
 | `posponerEjecucion(key, callback, delay = 300, immediate = false)` | `debounce` |
 | `cancelarEjecucionPendiente(key)` | `cancelDebounce` |
 | `ejecutarSiCambia(key, newValue, callback, delay = 100)` | `executeOnChange` |
 | `cancelarEjecucionesPendientes()` | `clearAllDebounces` |
 | `normalizarNumero(value)` | `normalizeNumber` |
 | `formatearNumeroEuropeo(value, decimalPlaces = 2, useThousandsSeparator = true)` | `formatToEuropean` |
-| `convertirAFormatoEuropeo(value, decimalPlaces = 2)` | `toEuropeanFormat` |
+| `convertirNumeroEuropeo(value, decimalPlaces = 2)` | `toEuropeanFormat` |
 
 ### Ítems de página
 
@@ -245,9 +281,9 @@ Prefijo: `invUtils.item.`
 
 | Firma actual | Nombre anterior |
 |---|---|
-| `obtenerNumero(itemName, defaultValue = 0)` | `getNumeric` |
-| `obtener(itemName, defaultValue = 0)` | `get` |
-| `obtenerNumeros(itemNames, defaultValue = 0)` | `getMultipleNumeric` |
+| `leerNumero(itemName, defaultValue = 0)` | `getNumeric` |
+| `leerValorNumerico(itemName, defaultValue = 0)` | `get` |
+| `leerNumeros(itemNames, defaultValue = 0)` | `getMultipleNumeric` |
 
 ### Edición y datos
 
@@ -260,7 +296,7 @@ Prefijo: `invUtils.grid.`
 | `extraerCampos(regionId, campos, campoDestino)` | `extraerDatos` |
 | `cargarDatos(configuracion)` | `setearDatosIG` |
 | `cargarDatosDirectos(regionId, datos, limpiar = true, refrescar = true, modoEdicion = true)` | `setearDatosDirectos` |
-| `cargarDatosDesdeItem(regionId, campoOrigen, limpiar = true, refrescar = true, modoEdicion = true)` | `setearDatos` |
+| `cargarDesdeItem(regionId, campoOrigen, limpiar = true, refrescar = true, modoEdicion = true)` | `setearDatos` |
 
 ### Cálculos y configuración
 
@@ -269,20 +305,20 @@ Prefijo: `invUtils.grid.`
 | Firma actual | Nombre anterior |
 |---|---|
 | `configurarCalculoAutomatico(gridStaticId, config)` | `setupAutoCalculation` |
-| `calcular(gridStaticId, config)` | `calculate` |
-| `configurarCantidadPorCosto(gridStaticId, cantidadColumn = 'CANTIDAD', costoColumn = 'COSTO', totalColumn = 'TOTAL', decimalPlaces = 3)` | `setupCantidadPorCosto` |
+| `calcularColumnas(gridStaticId, config)` | `calculate` |
+| `configurarMultiplicacion(gridStaticId, cantidadColumn = 'CANTIDAD', costoColumn = 'COSTO', totalColumn = 'TOTAL', decimalPlaces = 3)` | `setupCantidadPorCosto` |
 | `asegurarCalculoAutomatico(gridStaticId, targetColumn = 'TOTAL')` | `ensureAutoCalculation` |
 | `asegurarFormatoDecimal(gridStaticId, columnName, decimalPlaces = 2)` | `ensureDecimalFormat` |
-| `sumarColumnaEnItem(gridStaticId, columnName, targetItem, decimalPlaces = 2, autoUpdate = true)` | `sumColumnToItem` |
-| `sumarTotalEnItem(gridStaticId, targetItem, decimalPlaces = 2)` | `sumTotalToItem` |
+| `sumarColumna(gridStaticId, columnName, targetItem, decimalPlaces = 2, autoUpdate = true)` | `sumColumnToItem` |
+| `sumarTotal(gridStaticId, targetItem, decimalPlaces = 2)` | `sumTotalToItem` |
 | `escucharCambios(gridStaticId, callback, eventTypes = ['set', 'add', 'delete', 'reset'])` | `setupGridListener` |
 | `forzarRecalculo(gridStaticId, config)` | `forceRecalculate` |
 | `actualizarCalculoAutomatico(gridStaticId, targetColumn = null, delay = 50)` | `refreshAutoCalculation` |
-| `obtenerConfiguracionCalculo(gridStaticId, targetColumn = null)` | `getAutoCalculationConfig` |
+| `leerConfiguracionCalculo(gridStaticId, targetColumn = null)` | `getAutoCalculationConfig` |
 | `eliminarConfiguracionCalculo(gridStaticId, targetColumn = null)` | `clearAutoCalculationConfig` |
-| `obtenerConfiguracionesCalculo(gridStaticId = null)` | `getAllAutoCalculationConfigs` |
+| `leerConfiguracionesCalculo(gridStaticId = null)` | `getAllAutoCalculationConfigs` |
 | `estaInicializado()` | `isInitialized` |
-| `inicializar()` | `initialize` |
+| `inicializarModulo()` | `initialize` |
 | `recalcularFilas(gridStaticId, sourceColumnsOrConfig, targetColumn, formula, decimalPlaces = 2, delay = 50)` | `recalculateAllRows` |
 
 ### Lectura de valores
@@ -291,20 +327,20 @@ Prefijo: `invUtils.grid.`
 
 | Firma actual | Nombre anterior |
 |---|---|
-| `obtenerValorColumna(gridStaticId, columnName)` | `getColumnValue` |
-| `obtenerValorCelda(gridStaticId, columnName, rowIndex = -1)` | `getCellValue` |
-| `obtenerValorCeldaSeleccionada(gridStaticId, columnName)` | `getSelectedCellValue` |
-| `obtenerValorPrimeraCelda(gridStaticId, columnName)` | `getFirstCellValue` |
-| `obtenerFilaActual(gridStaticId, columns = null)` | `getCurrentRow` |
-| `obtenerNumeroCelda(gridStaticId, columnName, rowIndex = -1, defaultValue = 0)` | `getNumericCellValue` |
-| `obtenerNumeroCeldaSeleccionada(gridStaticId, columnName, defaultValue = 0)` | `getSelectedNumericCellValue` |
-| `obtenerNumeroPrimeraCelda(gridStaticId, columnName, defaultValue = 0)` | `getFirstNumericCellValue` |
-| `obtenerNumeroCeldaConDecimales(gridStaticId, columnName, rowIndex = -1, decimalPlaces = 2, defaultValue = 0)` | `getNumericCellValueWithDecimals` |
-| `obtenerNumeroCeldaSeleccionadaConDecimales(gridStaticId, columnName, decimalPlaces = 2, defaultValue = 0)` | `getSelectedNumericCellValueWithDecimals` |
-| `obtenerNumeroPrimeraCeldaConDecimales(gridStaticId, columnName, decimalPlaces = 2, defaultValue = 0)` | `getFirstNumericCellValueWithDecimals` |
-| `obtenerEnteroCelda(gridStaticId, columnName, rowIndex = -1, defaultValue = 0)` | `getIntegerCellValue` |
-| `obtenerEnteroCeldaSeleccionada(gridStaticId, columnName, defaultValue = 0)` | `getSelectedIntegerCellValue` |
-| `obtenerEnteroPrimeraCelda(gridStaticId, columnName, defaultValue = 0)` | `getFirstIntegerCellValue` |
+| `leerColumna(gridStaticId, columnName)` | `getColumnValue` |
+| `leerCelda(gridStaticId, columnName, rowIndex = -1)` | `getCellValue` |
+| `leerCeldaSeleccionada(gridStaticId, columnName)` | `getSelectedCellValue` |
+| `leerPrimeraCelda(gridStaticId, columnName)` | `getFirstCellValue` |
+| `leerFilaActual(gridStaticId, columns = null)` | `getCurrentRow` |
+| `leerNumeroCelda(gridStaticId, columnName, rowIndex = -1, defaultValue = 0)` | `getNumericCellValue` |
+| `leerNumeroSeleccionado(gridStaticId, columnName, defaultValue = 0)` | `getSelectedNumericCellValue` |
+| `leerPrimerNumero(gridStaticId, columnName, defaultValue = 0)` | `getFirstNumericCellValue` |
+| `leerNumeroRedondeado(gridStaticId, columnName, rowIndex = -1, decimalPlaces = 2, defaultValue = 0)` | `getNumericCellValueWithDecimals` |
+| `leerNumeroSeleccionadoRedondeado(gridStaticId, columnName, decimalPlaces = 2, defaultValue = 0)` | `getSelectedNumericCellValueWithDecimals` |
+| `leerPrimerNumeroRedondeado(gridStaticId, columnName, decimalPlaces = 2, defaultValue = 0)` | `getFirstNumericCellValueWithDecimals` |
+| `leerEnteroCelda(gridStaticId, columnName, rowIndex = -1, defaultValue = 0)` | `getIntegerCellValue` |
+| `leerEnteroSeleccionado(gridStaticId, columnName, defaultValue = 0)` | `getSelectedIntegerCellValue` |
+| `leerPrimerEntero(gridStaticId, columnName, defaultValue = 0)` | `getFirstIntegerCellValue` |
 
 ### Asignación de valores
 
@@ -312,22 +348,22 @@ Prefijo: `invUtils.grid.`
 
 | Firma actual | Nombre anterior |
 |---|---|
-| `establecerValorColumna(gridStaticId, columnName, value)` | `setColumnValue` |
-| `establecerValorCelda(gridStaticId, columnName, rowIndex, value, refresh = true)` | `setCellValue` |
-| `establecerValorCeldaSeleccionada(gridStaticId, columnName, value, refresh = true)` | `setSelectedCellValue` |
-| `establecerValorPrimeraCelda(gridStaticId, columnName, value, refresh = true)` | `setFirstCellValue` |
+| `asignarColumna(gridStaticId, columnName, value)` | `setColumnValue` |
+| `asignarCelda(gridStaticId, columnName, rowIndex, value, refresh = true)` | `setCellValue` |
+| `asignarCeldaSeleccionada(gridStaticId, columnName, value, refresh = true)` | `setSelectedCellValue` |
+| `asignarPrimeraCelda(gridStaticId, columnName, value, refresh = true)` | `setFirstCellValue` |
 | `limpiarCeldasSeleccionadas(gridStaticId, columnNames, value = '', refresh = true)` | `cleanSelectedCellValues` |
-| `establecerNumeroCelda(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true)` | `setNumericCellValue` |
-| `establecerNumeroCeldaSeleccionada(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setSelectedNumericCellValue` |
-| `establecerNumeroPrimeraCelda(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setFirstNumericCellValue` |
-| `establecerEnteroCelda(gridStaticId, columnName, rowIndex, value, refresh = true)` | `setIntegerCellValue` |
-| `establecerEnteroCeldaSeleccionada(gridStaticId, columnName, value, refresh = true)` | `setSelectedIntegerCellValue` |
-| `establecerEnteroPrimeraCelda(gridStaticId, columnName, value, refresh = true)` | `setFirstIntegerCellValue` |
-| `establecerValorYRecalcular(gridStaticId, columnName, rowIndex, value, recalculoConfig, refresh = true)` | `setValueAndRecalculate` |
-| `establecerValorSeleccionadoYRecalcular(gridStaticId, columnName, value, recalculoConfig, refresh = true)` | `setSelectedValueAndRecalculate` |
-| `establecerPrimerValorYRecalcular(gridStaticId, columnName, value, recalculoConfig, refresh = true)` | `setFirstValueAndRecalculate` |
-| `establecerValorEnFilas(gridStaticId, targetColumn, valueOrFormula, options)` | `setAllRowsValue` |
-| `establecerValorFijoEnFilas(gridStaticId, targetColumn, value, options)` | `setAllRowsFixed` |
+| `asignarNumeroCelda(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true)` | `setNumericCellValue` |
+| `asignarNumeroSeleccionado(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setSelectedNumericCellValue` |
+| `asignarPrimerNumero(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setFirstNumericCellValue` |
+| `asignarEnteroCelda(gridStaticId, columnName, rowIndex, value, refresh = true)` | `setIntegerCellValue` |
+| `asignarEnteroSeleccionado(gridStaticId, columnName, value, refresh = true)` | `setSelectedIntegerCellValue` |
+| `asignarPrimerEntero(gridStaticId, columnName, value, refresh = true)` | `setFirstIntegerCellValue` |
+| `asignarCeldaConRecalculo(gridStaticId, columnName, rowIndex, value, recalculoConfig, refresh = true)` | `setValueAndRecalculate` |
+| `asignarCeldaSeleccionadaConRecalculo(gridStaticId, columnName, value, recalculoConfig, refresh = true)` | `setSelectedValueAndRecalculate` |
+| `asignarPrimeraCeldaConRecalculo(gridStaticId, columnName, value, recalculoConfig, refresh = true)` | `setFirstValueAndRecalculate` |
+| `asignarFilas(gridStaticId, targetColumn, valueOrFormula, options)` | `setAllRowsValue` |
+| `asignarValorFilas(gridStaticId, targetColumn, value, options)` | `setAllRowsFixed` |
 
 ### Navegación y foco
 
@@ -338,14 +374,14 @@ Prefijo: `invUtils.grid.`
 | `irACelda(gridStaticId, columnName, rowIndex = -1, focus = true)` | `gotoCell` |
 | `irAPrimeraCelda(gridStaticId, columnName)` | `gotoFirstCell` |
 | `irACeldaSeleccionada(gridStaticId, columnName)` | `gotoSelectedCell` |
-| `inicializarRestauracionFoco(enable = true)` | `initializeFocusRestoration` |
+| `configurarRestauracionFoco(enable = true)` | `initializeFocusRestoration` |
 | `habilitarRestauracionFoco()` | `enableFocusRestoration` |
 | `deshabilitarRestauracionFoco()` | `disableFocusRestoration` |
-| `obtenerUltimaCeldaConFoco()` | `getLastFocusedCell` |
-| `establecerUltimaCeldaConFoco(cellElement)` | `setLastFocusedCell` |
+| `leerUltimoFoco()` | `getLastFocusedCell` |
+| `asignarUltimoFoco(cellElement)` | `setLastFocusedCell` |
 | `restaurarFoco(delay = 50)` | `restoreFocus` |
-| `limpiarUltimaCeldaConFoco()` | `clearLastFocusedCell` |
-| `obtenerEstadoRestauracionFoco()` | `getFocusRestorationStatus` |
+| `limpiarReferenciaFoco()` | `clearLastFocusedCell` |
+| `leerEstadoFoco()` | `getFocusRestorationStatus` |
 
 ### Refresco y confirmación del modelo
 
@@ -353,14 +389,14 @@ Prefijo: `invUtils.grid.`
 
 | Firma actual | Nombre anterior |
 |---|---|
-| `refrescar(gridStaticId, refreshRegion = true)` | `refreshGrid` |
-| `refrescarYRecalcular(gridStaticId, recalculoConfig = null)` | `refreshGridAndRecalculate` |
-| `refrescarYRecalcularColumna(gridStaticId, targetColumn = null, delay = 100)` | `refreshGridAndRecalculateSimple` |
+| `refrescarRegion(gridStaticId, refreshRegion = true)` | `refreshGrid` |
+| `refrescarConRecalculo(gridStaticId, recalculoConfig = null)` | `refreshGridAndRecalculate` |
+| `refrescarCalculosRegistrados(gridStaticId, targetColumn = null, delay = 100)` | `refreshGridAndRecalculateSimple` |
 | `confirmarCambios(gridStaticId, commitAll = true, forceDirty = true)` | `commitGridChanges` |
-| `refrescarSoloVista(gridStaticId, commitChanges = true)` | `refreshGridViewOnly` |
-| `refrescarSeguro(gridStaticId, commitChanges = true, refreshRegion = false)` | `refreshGridSafe` |
-| `forzarRegistroModificado(gridStaticId, rowIndex = -1)` | `forceRecordDirty` |
-| `forzarEstadoModificado(model, targetRow, columnName = null)` | `forceDirtyState` |
+| `refrescarVista(gridStaticId, commitChanges = true)` | `refreshGridViewOnly` |
+| `refrescarConConfirmacion(gridStaticId, commitChanges = true, refreshRegion = false)` | `refreshGridSafe` |
+| `marcarFila(gridStaticId, rowIndex = -1)` | `forceRecordDirty` |
+| `marcarRegistro(model, targetRow, columnName = null)` | `forceDirtyState` |
 
 ### Variantes de asignación existentes
 
@@ -368,28 +404,28 @@ Prefijo: `invUtils.grid.`
 
 | Firma actual | Nombre anterior |
 |---|---|
-| `establecerNumeroCeldaConConfirmacion(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true)` | `setNumericCellValueWithCommit` |
-| `establecerNumeroCeldaSeleccionadaConConfirmacion(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setSelectedNumericCellValueWithCommit` |
-| `establecerNumeroPrimeraCeldaConConfirmacion(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setFirstNumericCellValueWithCommit` |
-| `establecerNumeroRobusto(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true)` | `setNumericValueRobust` |
-| `establecerNumeroSeleccionadoRobusto(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setSelectedNumericValueRobust` |
-| `establecerPrimerNumeroRobusto(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setFirstNumericValueRobust` |
-| `establecerNumeroEuropeo(gridStaticId, columnName, rowIndex, value, decimalPlaces = 2, refresh = true)` | `setNumericValueEuropean` |
-| `establecerNumeroSeleccionadoEuropeo(gridStaticId, columnName, value, decimalPlaces = 2, refresh = true)` | `setSelectedNumericValueEuropean` |
-| `establecerPrimerNumeroEuropeo(gridStaticId, columnName, value, decimalPlaces = 2, refresh = true)` | `setFirstNumericValueEuropean` |
-| `establecerValorCeldaComoModificado(gridStaticId, columnName, rowIndex, value, refresh = true, forceDirty = true)` | `setCellValueWithDirty` |
-| `establecerValorCeldaSeleccionadaComoModificado(gridStaticId, columnName, value, refresh = true, forceDirty = true)` | `setSelectedCellValueWithDirty` |
-| `establecerValorPrimeraCeldaComoModificado(gridStaticId, columnName, value, refresh = true, forceDirty = true)` | `setFirstCellValueWithDirty` |
-| `establecerValorCeldaConEstabilizacion(gridStaticId, columnName, rowIndex, value, maxAttempts = 5, delayBetweenAttempts = 200)` | `setCellValueWithStabilization` |
-| `establecerValorCeldaSeleccionadaConEstabilizacion(gridStaticId, columnName, value, maxAttempts = 5, delayBetweenAttempts = 200)` | `setSelectedCellValueWithStabilization` |
-| `establecerValorPrimeraCeldaConEstabilizacion(gridStaticId, columnName, value, maxAttempts = 5, delayBetweenAttempts = 200)` | `setFirstCellValueWithStabilization` |
+| `asignarNumeroMarcado(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true)` | `setNumericCellValueWithCommit` |
+| `asignarNumeroSeleccionadoMarcado(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setSelectedNumericCellValueWithCommit` |
+| `asignarPrimerNumeroMarcado(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setFirstNumericCellValueWithCommit` |
+| `asignarNumeroSinFormato(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true)` | `setNumericValueRobust` |
+| `asignarNumeroSeleccionadoSinFormato(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setSelectedNumericValueRobust` |
+| `asignarPrimerNumeroSinFormato(gridStaticId, columnName, value, decimalPlaces = null, refresh = true)` | `setFirstNumericValueRobust` |
+| `asignarNumeroEuropeo(gridStaticId, columnName, rowIndex, value, decimalPlaces = 2, refresh = true)` | `setNumericValueEuropean` |
+| `asignarNumeroSeleccionadoEuropeo(gridStaticId, columnName, value, decimalPlaces = 2, refresh = true)` | `setSelectedNumericValueEuropean` |
+| `asignarPrimerNumeroEuropeo(gridStaticId, columnName, value, decimalPlaces = 2, refresh = true)` | `setFirstNumericValueEuropean` |
+| `asignarCeldaMarcada(gridStaticId, columnName, rowIndex, value, refresh = true, forceDirty = true)` | `setCellValueWithDirty` |
+| `asignarCeldaSeleccionadaMarcada(gridStaticId, columnName, value, refresh = true, forceDirty = true)` | `setSelectedCellValueWithDirty` |
+| `asignarPrimeraCeldaMarcada(gridStaticId, columnName, value, refresh = true, forceDirty = true)` | `setFirstCellValueWithDirty` |
+| `asignarCeldaVerificada(gridStaticId, columnName, rowIndex, value, maxAttempts = 5, delayBetweenAttempts = 200)` | `setCellValueWithStabilization` |
+| `asignarCeldaSeleccionadaVerificada(gridStaticId, columnName, value, maxAttempts = 5, delayBetweenAttempts = 200)` | `setSelectedCellValueWithStabilization` |
+| `asignarPrimeraCeldaVerificada(gridStaticId, columnName, value, maxAttempts = 5, delayBetweenAttempts = 200)` | `setFirstCellValueWithStabilization` |
 | `simularInteraccionUsuario(gridStaticId, columnName, rowIndex = -1)` | `simulateUserInteraction` |
-| `establecerValorCeldaConActivacion(gridStaticId, columnName, rowIndex, value, simulateInteraction = true)` | `setCellValueWithActivation` |
-| `establecerValorCeldaSeleccionadaConActivacion(gridStaticId, columnName, value, simulateInteraction = true)` | `setSelectedCellValueWithActivation` |
-| `establecerValorPrimeraCeldaConActivacion(gridStaticId, columnName, value, simulateInteraction = true)` | `setFirstCellValueWithActivation` |
-| `establecerValorCeldaRobusto(gridStaticId, columnName, rowIndex, value, refresh = true, maxRetries = 3)` | `setCellValueRobust` |
-| `establecerValorCeldaSeleccionadaRobusto(gridStaticId, columnName, value, refresh = true, maxRetries = 3)` | `setSelectedCellValueRobust` |
-| `establecerValorPrimeraCeldaRobusto(gridStaticId, columnName, value, refresh = true, maxRetries = 3)` | `setFirstCellValueRobust` |
+| `asignarCeldaActivada(gridStaticId, columnName, rowIndex, value, simulateInteraction = true)` | `setCellValueWithActivation` |
+| `asignarCeldaSeleccionadaActivada(gridStaticId, columnName, value, simulateInteraction = true)` | `setSelectedCellValueWithActivation` |
+| `asignarPrimeraCeldaActivada(gridStaticId, columnName, value, simulateInteraction = true)` | `setFirstCellValueWithActivation` |
+| `asignarCeldaPausandoEventos(gridStaticId, columnName, rowIndex, value, refresh = true, maxRetries = 3)` | `setCellValueRobust` |
+| `asignarCeldaSeleccionadaPausandoEventos(gridStaticId, columnName, value, refresh = true, maxRetries = 3)` | `setSelectedCellValueRobust` |
+| `asignarPrimeraCeldaPausandoEventos(gridStaticId, columnName, value, refresh = true, maxRetries = 3)` | `setFirstCellValueRobust` |
 
 ### Selección y sincronización con ítems
 
@@ -397,11 +433,11 @@ Prefijo: `invUtils.grid.`
 
 | Firma actual | Nombre anterior |
 |---|---|
-| `actualizarItemAlSeleccionarFila(gridStaticId, columnName, itemName)` | `setItemOnRowSelect` |
-| `actualizarItemAlCambiarFilaOCelda(gridStaticId, columnName, itemName)` | `setItemOnRowOrCellChange` |
-| `establecerValorEnFilaSeleccionada(gridStaticId, columnName, value)` | `setValueToSelectedRow` |
-| `seleccionarPrimeraFilaAlIniciar(gridStaticId, callback)` | `selectFirstRowOnInit` |
-| `sincronizarConItem(gridStaticId, columnName, itemName, options)` | `syncGridToItem` |
+| `sincronizarItemSeleccion(gridStaticId, columnName, itemName)` | `setItemOnRowSelect` |
+| `sincronizarItemCambios(gridStaticId, columnName, itemName)` | `setItemOnRowOrCellChange` |
+| `asignarColumnaSeleccionada(gridStaticId, columnName, value)` | `setValueToSelectedRow` |
+| `seleccionarFilaInicial(gridStaticId, callback)` | `selectFirstRowOnInit` |
+| `sincronizarItem(gridStaticId, columnName, itemName, options)` | `syncGridToItem` |
 | `sincronizarDesdeItem(gridStaticId, columnName, itemName, options)` | `syncItemToGrid` |
 | `sincronizarItemBidireccional(gridStaticId, columnName, itemName, options)` | `syncGridItemValues` |
 
@@ -411,7 +447,7 @@ Prefijo: `invUtils.grid.`
 
 | Firma actual | Nombre anterior |
 |---|---|
-| `depurar(gridStaticId, columnName = null)` | `debugGrid` |
+| `depurarCambios(gridStaticId, columnName = null)` | `debugGrid` |
 
 ### Fórmulas y configuraciones rápidas
 
@@ -419,28 +455,126 @@ Prefijo: `invUtils.grid.`
 |---|---|
 | `invUtils.grid.formulas.multiplicar(values, col1, col2)` | `apexGridUtils.presetFormulas.multiply(...)` |
 | `invUtils.grid.formulas.agregarImpuesto(values, priceCol, taxPercent = 10)` | `apexGridUtils.presetFormulas.addTax(...)` |
-| `invUtils.grid.formulas.subtotalConDescuento(values, qtyCol, priceCol, discountCol)` | `apexGridUtils.presetFormulas.subtotalWithDiscount(...)` |
+| `invUtils.grid.formulas.calcularSubtotal(values, qtyCol, priceCol, discountCol)` | `apexGridUtils.presetFormulas.subtotalWithDiscount(...)` |
 | `invUtils.grid.formulas.sumar(values, ...columns)` | `apexGridUtils.presetFormulas.sum(...)` |
 | `invUtils.grid.formulas.promediar(values, ...columns)` | `apexGridUtils.presetFormulas.average(...)` |
-| `invUtils.grid.configuracionesRapidas.multiplicarColumnas(gridStaticId, col1, col2, targetCol, decimalPlaces = 2)` | `apexGridUtils.quick.multiplyColumns(...)` |
-| `invUtils.grid.configuracionesRapidas.precioConImpuesto(gridStaticId, priceCol, targetCol, taxPercent = 10, decimalPlaces = 2)` | `apexGridUtils.quick.priceWithTax(...)` |
-| `invUtils.grid.configuracionesRapidas.subtotalConDescuento(gridStaticId, qtyCol, priceCol, discountCol, targetCol, decimalPlaces = 2)` | `apexGridUtils.quick.subtotalWithDiscount(...)` |
+| `invUtils.grid.configuracionesRapidas.configurarProducto(gridStaticId, col1, col2, targetCol, decimalPlaces = 2)` | `apexGridUtils.quick.multiplyColumns(...)` |
+| `invUtils.grid.configuracionesRapidas.configurarImpuesto(gridStaticId, priceCol, targetCol, taxPercent = 10, decimalPlaces = 2)` | `apexGridUtils.quick.priceWithTax(...)` |
+| `invUtils.grid.configuracionesRapidas.configurarDescuento(gridStaticId, qtyCol, priceCol, discountCol, targetCol, decimalPlaces = 2)` | `apexGridUtils.quick.subtotalWithDiscount(...)` |
 
 ### Objeto de control de depuración
 
-`invUtils.grid.depurar(regionId, columna)` devuelve un objeto de control o `null` si falla:
+`invUtils.grid.depurarCambios(regionId, columna)` devuelve un objeto de control o `null` si falla:
 
 | Método actual | Método anterior |
 |---|---|
-| `control.obtenerEstadoActual()` | `control.getCurrentState()` |
+| `control.leerEstadoActual()` | `control.getCurrentState()` |
 | `control.simularCambioManual()` | `control.simulateManualChange()` |
 | `control.detenerDepuracion()` | `control.stopDebug()` |
-| `control.obtenerResumen()` | `control.getSummary()` |
+| `control.leerResumen()` | `control.getSummary()` |
 
 La propiedad `control.debugInfo` conserva su nombre. `simularCambioManual` modifica un valor de prueba; utilizarlo únicamente en un entorno de pruebas.
 
 ### Objeto de resultado de suma
 
-`invUtils.grid.sumarColumnaEnItem(...)` y `invUtils.grid.sumarTotalEnItem(...)` devuelven `sum`, `gridStaticId`, `columnName`, `targetItem` y el método `calcularSuma()` (antes `calculateSum()`). Este método recalcula el total, actualiza el ítem y devuelve el nuevo número; `sum` contiene el total inicial.
+`invUtils.grid.sumarColumna(...)` y `invUtils.grid.sumarTotal(...)` devuelven `sum`, `gridStaticId`, `columnName`, `targetItem` y el método `calcularSuma()` (antes `calculateSum()`). Este método recalcula el total, actualiza el ítem y devuelve el nuevo número; `sum` contiene el total inicial.
 
 Autor: Luis Talavera. Licencia: [MIT](LICENSE.md).
+
+## Cambios de nombres respecto al commit e9676e1
+
+Se conservan las firmas, valores por defecto y lógica. Esta tabla permite actualizar las llamadas anteriores en español; no se mantienen alias con esos nombres.
+
+| Antes | Ahora |
+|---|---|
+| `alerta` | `mostrarAlerta` |
+| `convertirAFormatoEuropeo` | `convertirNumeroEuropeo` |
+| `obtenerNumero` | `leerNumero` |
+| `obtener` | `leerValorNumerico` |
+| `obtenerNumeros` | `leerNumeros` |
+| `cargarDatosDesdeItem` | `cargarDesdeItem` |
+| `calcular` | `calcularColumnas` |
+| `configurarCantidadPorCosto` | `configurarMultiplicacion` |
+| `sumarColumnaEnItem` | `sumarColumna` |
+| `sumarTotalEnItem` | `sumarTotal` |
+| `obtenerConfiguracionCalculo` | `leerConfiguracionCalculo` |
+| `obtenerConfiguracionesCalculo` | `leerConfiguracionesCalculo` |
+| `inicializar` | `inicializarModulo` |
+| `obtenerValorColumna` | `leerColumna` |
+| `obtenerValorCelda` | `leerCelda` |
+| `obtenerValorCeldaSeleccionada` | `leerCeldaSeleccionada` |
+| `obtenerValorPrimeraCelda` | `leerPrimeraCelda` |
+| `obtenerFilaActual` | `leerFilaActual` |
+| `obtenerNumeroCelda` | `leerNumeroCelda` |
+| `obtenerNumeroCeldaSeleccionada` | `leerNumeroSeleccionado` |
+| `obtenerNumeroPrimeraCelda` | `leerPrimerNumero` |
+| `obtenerNumeroCeldaConDecimales` | `leerNumeroRedondeado` |
+| `obtenerNumeroCeldaSeleccionadaConDecimales` | `leerNumeroSeleccionadoRedondeado` |
+| `obtenerNumeroPrimeraCeldaConDecimales` | `leerPrimerNumeroRedondeado` |
+| `obtenerEnteroCelda` | `leerEnteroCelda` |
+| `obtenerEnteroCeldaSeleccionada` | `leerEnteroSeleccionado` |
+| `obtenerEnteroPrimeraCelda` | `leerPrimerEntero` |
+| `establecerValorColumna` | `asignarColumna` |
+| `establecerValorCelda` | `asignarCelda` |
+| `establecerValorCeldaSeleccionada` | `asignarCeldaSeleccionada` |
+| `establecerValorPrimeraCelda` | `asignarPrimeraCelda` |
+| `establecerNumeroCelda` | `asignarNumeroCelda` |
+| `establecerNumeroCeldaSeleccionada` | `asignarNumeroSeleccionado` |
+| `establecerNumeroPrimeraCelda` | `asignarPrimerNumero` |
+| `establecerEnteroCelda` | `asignarEnteroCelda` |
+| `establecerEnteroCeldaSeleccionada` | `asignarEnteroSeleccionado` |
+| `establecerEnteroPrimeraCelda` | `asignarPrimerEntero` |
+| `establecerValorYRecalcular` | `asignarCeldaConRecalculo` |
+| `establecerValorSeleccionadoYRecalcular` | `asignarCeldaSeleccionadaConRecalculo` |
+| `establecerPrimerValorYRecalcular` | `asignarPrimeraCeldaConRecalculo` |
+| `establecerValorEnFilas` | `asignarFilas` |
+| `establecerValorFijoEnFilas` | `asignarValorFilas` |
+| `cursorCelda` | `irACelda` |
+| `cursorCeldaSeleccionada` | `irACeldaSeleccionada` |
+| `inicializarRestauracionFoco` | `configurarRestauracionFoco` |
+| `obtenerUltimaCeldaConFoco` | `leerUltimoFoco` |
+| `establecerUltimaCeldaConFoco` | `asignarUltimoFoco` |
+| `limpiarUltimaCeldaConFoco` | `limpiarReferenciaFoco` |
+| `obtenerEstadoRestauracionFoco` | `leerEstadoFoco` |
+| `refrescar` | `refrescarRegion` |
+| `refrescarYRecalcular` | `refrescarConRecalculo` |
+| `refrescarYRecalcularColumna` | `refrescarCalculosRegistrados` |
+| `refrescarSoloVista` | `refrescarVista` |
+| `refrescarSeguro` | `refrescarConConfirmacion` |
+| `forzarRegistroModificado` | `marcarFila` |
+| `forzarEstadoModificado` | `marcarRegistro` |
+| `establecerNumeroCeldaConConfirmacion` | `asignarNumeroMarcado` |
+| `establecerNumeroCeldaSeleccionadaConConfirmacion` | `asignarNumeroSeleccionadoMarcado` |
+| `establecerNumeroPrimeraCeldaConConfirmacion` | `asignarPrimerNumeroMarcado` |
+| `establecerNumeroRobusto` | `asignarNumeroSinFormato` |
+| `establecerNumeroSeleccionadoRobusto` | `asignarNumeroSeleccionadoSinFormato` |
+| `establecerPrimerNumeroRobusto` | `asignarPrimerNumeroSinFormato` |
+| `establecerNumeroEuropeo` | `asignarNumeroEuropeo` |
+| `establecerNumeroSeleccionadoEuropeo` | `asignarNumeroSeleccionadoEuropeo` |
+| `establecerPrimerNumeroEuropeo` | `asignarPrimerNumeroEuropeo` |
+| `establecerValorCeldaComoModificado` | `asignarCeldaMarcada` |
+| `establecerValorCeldaSeleccionadaComoModificado` | `asignarCeldaSeleccionadaMarcada` |
+| `establecerValorPrimeraCeldaComoModificado` | `asignarPrimeraCeldaMarcada` |
+| `establecerValorCeldaConEstabilizacion` | `asignarCeldaVerificada` |
+| `establecerValorCeldaSeleccionadaConEstabilizacion` | `asignarCeldaSeleccionadaVerificada` |
+| `establecerValorPrimeraCeldaConEstabilizacion` | `asignarPrimeraCeldaVerificada` |
+| `establecerValorCeldaConActivacion` | `asignarCeldaActivada` |
+| `establecerValorCeldaSeleccionadaConActivacion` | `asignarCeldaSeleccionadaActivada` |
+| `establecerValorPrimeraCeldaConActivacion` | `asignarPrimeraCeldaActivada` |
+| `establecerValorCeldaRobusto` | `asignarCeldaPausandoEventos` |
+| `establecerValorCeldaSeleccionadaRobusto` | `asignarCeldaSeleccionadaPausandoEventos` |
+| `establecerValorPrimeraCeldaRobusto` | `asignarPrimeraCeldaPausandoEventos` |
+| `actualizarItemAlSeleccionarFila` | `sincronizarItemSeleccion` |
+| `actualizarItemAlCambiarFilaOCelda` | `sincronizarItemCambios` |
+| `establecerValorEnFilaSeleccionada` | `asignarColumnaSeleccionada` |
+| `seleccionarPrimeraFilaAlIniciar` | `seleccionarFilaInicial` |
+| `sincronizarConItem` | `sincronizarItem` |
+| `depurar` | `depurarCambios` |
+| `obtenerContextoRegistro` | `leerContextoRegistro` |
+| `obtenerEstadoActual` | `leerEstadoActual` |
+| `obtenerResumen` | `leerResumen` |
+| `multiplicarColumnas` | `configurarProducto` |
+| `precioConImpuesto` | `configurarImpuesto` |
+| `subtotalConDescuento` | `calcularSubtotal` |
+
+En `grid.configuracionesRapidas`, `subtotalConDescuento` pasa a `configurarDescuento`; en `grid.formulas`, pasa a `calcularSubtotal`.
