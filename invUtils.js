@@ -1,6 +1,7 @@
 /**
  * invUtils — Utilidades para Oracle APEX
  * Autor: Luis Talavera | Licencia: MIT
+ * Version Inventiva: Ronald Paniagua
  * Referencias de API: Oracle APEX 24.1 hasta 26.1; versiones posteriores requieren nueva validación.
  * Inicio e instalación: README.md. Desarrollo: docs/desarrollo.md.
  * Ejemplos: docs/manual.md. Catálogo: docs/referencia-api.md.
@@ -20,6 +21,7 @@ window.invUtils = (function (apex, $) {
     // =============================================================================
 
     const autoCalculationConfigs = new Map();
+    const sincronizacionesGrid = new Map(); // syncId → { cleanup } de sincronizarItem / sincronizarDesdeItem
     const debounceTimers = new Map();
     const ultimosValores = Object.create(null);
     let lastFocusedCell = null;
@@ -54,13 +56,13 @@ window.invUtils = (function (apex, $) {
             okLabel: "Aceptar",
         };
 
-        console.log("status : " + v_status);
+        apex.debug.info("status : " + v_status);
 
         if (200 <= v_status && v_status <= 299){
-            console.log("Success alert!");
+            apex.debug.info("Success alert!");
             apex.message.alert(v_manesaje,null,success_alertOptions);
         }else{
-            console.log("Error alert!");
+            apex.debug.info("Error alert!");
             apex.message.alert(v_manesaje,null,error_alertOptions);
         }
         return true;
@@ -172,7 +174,7 @@ window.invUtils = (function (apex, $) {
                 clearTimeout(timerId);
             });
             debounceTimers.clear();
-            console.log('invUtils: Todos los debounces limpiados');
+            apex.debug.info('invUtils: Todos los debounces limpiados');
         } catch (error) {
             console.error('cancelarEjecucionesPendientes error:', error);
         }
@@ -281,7 +283,11 @@ window.invUtils = (function (apex, $) {
      */
     function leerNumero(itemName, defaultValue = 0) {
         try {
-            let value = $v(itemName);
+            let value = apex.item(itemName).getValue();
+            // Igual que $v: los ítems de varios valores se unen con ':'
+            if (Array.isArray(value)) {
+                value = value.join(':');
+            }
 
             // Si está vacío o es null/undefined
             if (!value || value.trim() === '') {
@@ -351,8 +357,9 @@ window.invUtils = (function (apex, $) {
                 return false;
             }
 
+            // Solo tiene efecto real si la región ya es editable: no configura el proceso de DML del IG
             grid.model.setOption("editable", true);
-            grid.setEditMode(true);
+            grid.view$.grid("setEditMode", true);
 
 
             if (typeof modoEdicion === 'function') {
@@ -372,7 +379,7 @@ window.invUtils = (function (apex, $) {
      * @returns {object} Resultado con success, data, count o error.
      */
     function extraerDatos(configuracion) {
-        console.log('Ejecutando extracción de datos del IG:', configuracion.regionId);
+        apex.debug.info('Ejecutando extracción de datos del IG:', configuracion.regionId);
 
         try {
             // Validar parámetros obligatorios
@@ -447,8 +454,8 @@ window.invUtils = (function (apex, $) {
             var valorDestino = configuracion.formatoSalida === 'array' ? data : JSON.stringify(data);
             apex.item(configuracion.campoDestino).setValue(valorDestino);
 
-            console.log('Datos extraídos:', data);
-            console.log('Total registros:', data.length);
+            apex.debug.info('Datos extraídos:', data);
+            apex.debug.info('Total registros:', data.length);
 
 
             if (configuracion.callback && typeof configuracion.callback === 'function') {
@@ -514,7 +521,7 @@ window.invUtils = (function (apex, $) {
      * @returns {object} - Objeto con resultado de la operación
      */
     function cargarDatos(configuracion) {
-        console.log('invUtils: Seteando datos en IG:', configuracion.regionId);
+        apex.debug.info('invUtils: Seteando datos en IG:', configuracion.regionId);
 
         try {
             // Validar parámetros obligatorios
@@ -529,11 +536,11 @@ window.invUtils = (function (apex, $) {
             // Habilitar modo edición si se especifica (por defecto true)
             if (configuracion.modoEdicion !== false) {
                 try {
-                    // Habilitar edición en el modelo
+                    // Habilitar edición en el modelo (requiere que la región ya sea editable para guardar)
                     model.setOption("editable", true);
                     // Activar modo edición en la grilla
-                    grid.setEditMode(true);
-                    console.log('invUtils: Modo edición habilitado para:', configuracion.regionId);
+                    grid.view$.grid("setEditMode", true);
+                    apex.debug.info('invUtils: Modo edición habilitado para:', configuracion.regionId);
                 } catch (editError) {
                     console.warn('invUtils: No se pudo habilitar modo edición:', editError);
                 }
@@ -546,12 +553,12 @@ window.invUtils = (function (apex, $) {
                 // Datos pasados directamente
                 datos = Array.isArray(configuracion.datos) ? configuracion.datos : [configuracion.datos];
             } else if (configuracion.campoOrigen) {
-                // Datos desde un campo de la página usando $v() como en tu ejemplo
-                var valorCampo = $v(configuracion.campoOrigen);
+                // Datos (JSON) desde un ítem de la página
+                var valorCampo = apex.item(configuracion.campoOrigen).getValue();
                 if (valorCampo) {
                     try {
                         datos = JSON.parse(valorCampo);
-                        console.log(`invUtils: Datos obtenidos del item ${configuracion.campoOrigen}:`, datos);
+                        apex.debug.info(`invUtils: Datos obtenidos del item ${configuracion.campoOrigen}:`, datos);
                     } catch (e) {
                         throw new Error('Error al parsear JSON del campo: ' + configuracion.campoOrigen);
                     }
@@ -684,7 +691,7 @@ window.invUtils = (function (apex, $) {
                 }
             });
 
-            console.log('invUtils: Registros procesados:', registrosProcesados);
+            apex.debug.info('invUtils: Registros procesados:', registrosProcesados);
             if (registrosConErrores > 0) {
                 console.warn('invUtils: Registros con errores:', registrosConErrores);
             }
@@ -693,8 +700,8 @@ window.invUtils = (function (apex, $) {
             if (configuracion.refrescar !== false) {
                 try {
                     // Usar el método que funciona para refrescar
-                    grid.view$.trigger('refresh');
-                    console.log('invUtils: Grilla refrescada correctamente');
+                    grid.view$.grid('refresh');
+                    apex.debug.info('invUtils: Grilla refrescada correctamente');
                 } catch (refreshError) {
                     console.warn('invUtils: No se pudo refrescar la grilla:', refreshError);
                     // Intentar refresh de la región completa como alternativa
@@ -820,7 +827,7 @@ window.invUtils = (function (apex, $) {
 
             // Configurar eventos automáticos si está habilitado
             if (settings.autoTrigger) {
-                configurarEventosCalculo(gridStaticId, settings.sourceColumns, ejecutarCalculo);
+                configurarEventosCalculo(gridStaticId, settings.sourceColumns, ejecutarCalculo, configId);
             }
 
             // Ejecutar cálculo inicial si está configurado
@@ -828,7 +835,7 @@ window.invUtils = (function (apex, $) {
                 setTimeout(ejecutarCalculo, 100);
             }
 
-            console.log(`invUtils: Configurado cálculo automático para ${gridStaticId} -> ${config.targetColumn} (ID: ${configId})`);
+            apex.debug.info(`invUtils: Configurado cálculo automático para ${gridStaticId} -> ${config.targetColumn} (ID: ${configId})`);
             return configId;
 
         } catch (error) {
@@ -867,7 +874,7 @@ window.invUtils = (function (apex, $) {
      */
     function configurarMultiplicacion(gridStaticId, cantidadColumn = 'CANTIDAD', costoColumn = 'COSTO', totalColumn = 'TOTAL', decimalPlaces = 3) {
         try {
-            console.log(`invUtils: Configurando cálculo automático ${cantidadColumn} × ${costoColumn} = ${totalColumn} para ${gridStaticId}`);
+            apex.debug.info(`invUtils: Configurando cálculo automático ${cantidadColumn} × ${costoColumn} = ${totalColumn} para ${gridStaticId}`);
 
             const configId = configurarCalculoAutomatico(gridStaticId, {
                 sourceColumns: [cantidadColumn, costoColumn],
@@ -877,7 +884,7 @@ window.invUtils = (function (apex, $) {
                     const costo = values[costoColumn] || 0;
                     const resultado = cantidad * costo;
 
-                    console.log(`invUtils: Fórmula ejecutada: ${cantidad} × ${costo} = ${resultado}`);
+                    apex.debug.info(`invUtils: Fórmula ejecutada: ${cantidad} × ${costo} = ${resultado}`);
                     return resultado;
                 },
                 decimalPlaces: decimalPlaces,
@@ -886,11 +893,11 @@ window.invUtils = (function (apex, $) {
             });
 
             if (configId) {
-                console.log(`invUtils: Cálculo automático configurado exitosamente con ID: ${configId}`);
+                apex.debug.info(`invUtils: Cálculo automático configurado exitosamente con ID: ${configId}`);
 
                 // Ejecutar cálculo inicial después de un pequeño delay
                 setTimeout(() => {
-                    console.log(`invUtils: Ejecutando cálculo inicial para ${configId}`);
+                    apex.debug.info(`invUtils: Ejecutando cálculo inicial para ${configId}`);
                     actualizarCalculoAutomatico(gridStaticId, totalColumn, 100);
                 }, 200);
             } else {
@@ -916,10 +923,10 @@ window.invUtils = (function (apex, $) {
             const config = leerConfiguracionCalculo(gridStaticId, targetColumn);
 
             if (config) {
-                console.log(`invUtils: Configuración existente encontrada para ${gridStaticId} -> ${targetColumn}`);
+                apex.debug.info(`invUtils: Configuración existente encontrada para ${gridStaticId} -> ${targetColumn}`);
                 return true;
             } else {
-                console.log(`invUtils: No se encontró configuración para ${gridStaticId} -> ${targetColumn}, configurando automáticamente...`);
+                apex.debug.info(`invUtils: No se encontró configuración para ${gridStaticId} -> ${targetColumn}, configurando automáticamente...`);
 
                 // Configurar automáticamente el cálculo más común
                 const configId = configurarMultiplicacion(gridStaticId);
@@ -953,7 +960,7 @@ window.invUtils = (function (apex, $) {
                 const formattedValue = parseFloat(currentValue.toFixed(decimalPlaces));
                 model.setValue(record, columnName, formattedValue);
 
-                //console.log(`invUtils: Formato corregido para ${columnName}: ${currentValue} -> ${formattedValue}`);
+                //apex.debug.info(`invUtils: Formato corregido para ${columnName}: ${currentValue} -> ${formattedValue}`);
                 return true;
             }
 
@@ -1005,26 +1012,23 @@ window.invUtils = (function (apex, $) {
 
             // Configurar actualización automática si está habilitada
             if (autoUpdate) {
-                // Suscribirse a cambios en el modelo
+                // Una sola suscripción por grilla, columna e ítem: llamar de nuevo reemplaza la anterior
+                const viewId = 'invUtils_suma_' + gridStaticId + '_' + columnName + '_' + targetItem;
+                const tiposCambio = normalizarTiposCambio(['set', 'add', 'delete', 'reset']);
+                try { model.unSubscribe(viewId); } catch (e) { /* no había suscripción previa */ }
+
+                // Valores editados, filas nuevas o eliminadas y recargas de datos
                 model.subscribe({
-                    onChange: function (type, change) {
-                        if (['set', 'add', 'delete', 'reset'].includes(type)) {
+                    viewId: viewId,
+                    onChange: function (type) {
+                        if (tiposCambio.includes(type)) {
                             // Un pequeño delay puede ayudar a que el modelo se estabilice antes de calcular
                             setTimeout(calcularSuma, 50);
                         }
                     }
                 });
 
-                // También escuchar cambios en la estructura del grid (nuevas filas, eliminaciones)
-                model.subscribe({
-                    onChange: function (type) {
-                        if (type === 'add' || type === 'delete' || type === 'reset' || type === 'add') {
-                            setTimeout(calcularSuma, 100);
-                        }
-                    }
-                });
-
-                //console.log(`invUtils: Configurada actualización automática para suma de ${columnName} -> ${targetItem}`);
+                //apex.debug.info(`invUtils: Configurada actualización automática para suma de ${columnName} -> ${targetItem}`);
             }
 
             // Retornar objeto con la suma y la función para uso externo
@@ -1062,24 +1066,29 @@ window.invUtils = (function (apex, $) {
      * Configurar listener externo para recalcular suma cuando cambie el grid
      * @param {string} gridStaticId - Static ID del Interactive Grid
      * @param {function} callback - Función a ejecutar cuando cambie el grid
-     * @param {array} eventTypes - Tipos de eventos a escuchar (default: ['set', 'add', 'delete', 'reset'])
+     * @param {array} eventTypes - Tipos de eventos a escuchar (default: ['set', 'add', 'delete', 'reset']).
+     *   'add' equivale a insert/copy/addData y 'reset' a refresh/refreshRecords/revert; también se aceptan
+     *   directamente los tipos de notificación del modelo de APEX.
+     * @returns {string|false} viewId de la suscripción (para model.unSubscribe) o false si falla.
      */
     function escucharCambios(gridStaticId, callback, eventTypes = ['set', 'add', 'delete', 'reset']) {
         try {
             const ig$ = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid");
             const model = ig$.model;
+            const tiposCambio = normalizarTiposCambio(eventTypes);
 
-            model.subscribe({
-                onChange: function (type, change) {
-                    if (eventTypes.includes(type)) {
+            // subscribe devuelve el viewId; cada llamada agrega un listener nuevo
+            const viewId = model.subscribe({
+                onChange: function (type) {
+                    if (tiposCambio.includes(type)) {
                         // Pequeño delay para asegurar que el cambio se haya aplicado
                         setTimeout(callback, 50);
                     }
                 }
             });
 
-            //console.log(`invUtils: Configurado listener externo para ${gridStaticId} con eventos: ${eventTypes.join(', ')}`);
-            return true;
+            //apex.debug.info(`invUtils: Configurado listener externo para ${gridStaticId} con eventos: ${eventTypes.join(', ')}`);
+            return viewId;
 
         } catch (error) {
             console.error('invUtils escucharCambios error:', error);
@@ -1099,11 +1108,11 @@ window.invUtils = (function (apex, $) {
      */
     function forzarRecalculo(gridStaticId, config) {
         try {
-            console.log(`invUtils: Forzando recálculo en ${gridStaticId}...`);
+            apex.debug.info(`invUtils: Forzando recálculo en ${gridStaticId}...`);
 
             const result = calcularFormula(gridStaticId, config);
 
-            console.log(`invUtils: Recálculo forzado completado. Resultado: ${result}`);
+            apex.debug.info(`invUtils: Recálculo forzado completado. Resultado: ${result}`);
             return result;
 
         } catch (error) {
@@ -1127,8 +1136,8 @@ window.invUtils = (function (apex, $) {
                 return false;
             }
 
-            console.log(`invUtils: Refrescando cálculos automáticos para ${gridStaticId}${targetColumn ? ` -> ${targetColumn}` : ''}`);
-            console.log(`invUtils: Total configuraciones almacenadas: ${autoCalculationConfigs.size}`);
+            apex.debug.info(`invUtils: Refrescando cálculos automáticos para ${gridStaticId}${targetColumn ? ` -> ${targetColumn}` : ''}`);
+            apex.debug.info(`invUtils: Total configuraciones almacenadas: ${autoCalculationConfigs.size}`);
 
             let configsToRefresh = [];
 
@@ -1138,7 +1147,7 @@ window.invUtils = (function (apex, $) {
                 const config = autoCalculationConfigs.get(configId);
                 if (config) {
                     configsToRefresh.push(config);
-                    console.log(`invUtils: Configuración encontrada para ${configId}:`, config);
+                    apex.debug.info(`invUtils: Configuración encontrada para ${configId}:`, config);
                 } else {
                     console.warn(`invUtils: No se encontró configuración para ${gridStaticId} -> ${targetColumn} (ID: ${configId})`);
                     return false;
@@ -1148,18 +1157,18 @@ window.invUtils = (function (apex, $) {
                 autoCalculationConfigs.forEach((config, configId) => {
                     if (config.gridStaticId === gridStaticId) {
                         configsToRefresh.push(config);
-                        console.log(`invUtils: Configuración encontrada: ${configId}`, config);
+                        apex.debug.info(`invUtils: Configuración encontrada: ${configId}`, config);
                     }
                 });
 
                 if (configsToRefresh.length === 0) {
                     console.warn(`invUtils: No se encontraron configuraciones para ${gridStaticId}`);
-                    console.log(`invUtils: Configuraciones disponibles:`, Array.from(autoCalculationConfigs.keys()));
+                    apex.debug.info(`invUtils: Configuraciones disponibles:`, Array.from(autoCalculationConfigs.keys()));
                     return false;
                 }
             }
 
-            console.log(`invUtils: ${configsToRefresh.length} configuraciones a refrescar`);
+            apex.debug.info(`invUtils: ${configsToRefresh.length} configuraciones a refrescar`);
 
             // Ejecutar el recálculo con delay
             setTimeout(function () {
@@ -1169,7 +1178,7 @@ window.invUtils = (function (apex, $) {
                     // Ejecutar cada configuración
                     configsToRefresh.forEach(config => {
                         try {
-                            console.log(`invUtils: Ejecutando recálculo para configuración:`, config);
+                            apex.debug.info(`invUtils: Ejecutando recálculo para configuración:`, config);
 
                             // Verificar que el grid existe antes de recalcular
                             const gridData = leerContextoRegistro(gridStaticId);
@@ -1188,7 +1197,7 @@ window.invUtils = (function (apex, $) {
                                 const normalizedValue = normalizarNumero(rawValue);
                                 sourceValues[column] = normalizedValue;
 
-                                console.log(`invUtils: Columna fuente ${column}: valor original="${rawValue}", normalizado=${normalizedValue}`);
+                                apex.debug.info(`invUtils: Columna fuente ${column}: valor original="${rawValue}", normalizado=${normalizedValue}`);
 
                                 if (normalizedValue === 0 && rawValue !== 0) {
                                     console.warn(`invUtils: Columna ${column} tiene valor 0, verificar si es correcto`);
@@ -1201,7 +1210,7 @@ window.invUtils = (function (apex, $) {
 
                             const result = forzarRecalculo(gridStaticId, config);
                             totalResults += result;
-                            console.log(`invUtils: Recálculo completado para ${config.targetColumn}, resultado: ${result}`);
+                            apex.debug.info(`invUtils: Recálculo completado para ${config.targetColumn}, resultado: ${result}`);
 
                         } catch (error) {
                             console.error(`invUtils: Error durante el recálculo de ${config.targetColumn}:`, error);
@@ -1212,13 +1221,13 @@ window.invUtils = (function (apex, $) {
                     try {
                         const grid = apex.region(gridStaticId).call("getViews").grid;
                         // Método correcto para Interactive Grids de APEX
-                        grid.view$.trigger('refresh');
-                        console.log(`invUtils: Grid ${gridStaticId} refrescado después del recálculo`);
+                        grid.view$.grid('refresh');
+                        apex.debug.info(`invUtils: Grid ${gridStaticId} refrescado después del recálculo`);
                     } catch (e) {
                         console.warn(`invUtils: No se pudo refrescar grid ${gridStaticId}:`, e);
                     }
 
-                    console.log(`invUtils: Recálculo completado para ${gridStaticId}, ${configsToRefresh.length} configuraciones procesadas, total: ${totalResults}`);
+                    apex.debug.info(`invUtils: Recálculo completado para ${gridStaticId}, ${configsToRefresh.length} configuraciones procesadas, total: ${totalResults}`);
 
                 } catch (error) {
                     console.error(`invUtils: Error durante el recálculo de ${gridStaticId}:`, error);
@@ -1286,8 +1295,9 @@ window.invUtils = (function (apex, $) {
                 // Limpiar configuración específica
                 const configId = generarIdConfiguracion(gridStaticId, targetColumn);
                 deleted = autoCalculationConfigs.delete(configId);
+                liberarSuscripcionCalculo(gridStaticId, configId);
                 if (deleted) {
-                    console.log(`invUtils: Configuración limpiada para ${gridStaticId} -> ${targetColumn}`);
+                    apex.debug.info(`invUtils: Configuración limpiada para ${gridStaticId} -> ${targetColumn}`);
                 } else {
                     console.warn(`invUtils: No se encontró configuración para limpiar en ${gridStaticId} -> ${targetColumn}`);
                 }
@@ -1302,11 +1312,12 @@ window.invUtils = (function (apex, $) {
 
                 configsToDelete.forEach(configId => {
                     autoCalculationConfigs.delete(configId);
+                    liberarSuscripcionCalculo(gridStaticId, configId);
                     deleted = true;
                 });
 
                 if (deleted) {
-                    console.log(`invUtils: ${configsToDelete.length} configuraciones limpiadas para ${gridStaticId}`);
+                    apex.debug.info(`invUtils: ${configsToDelete.length} configuraciones limpiadas para ${gridStaticId}`);
                 } else {
                     console.warn(`invUtils: No se encontraron configuraciones para limpiar en ${gridStaticId}`);
                 }
@@ -1362,7 +1373,7 @@ window.invUtils = (function (apex, $) {
                 console.error('invUtils: Error al inicializar el módulo');
                 return false;
             }
-            console.log('invUtils: Módulo inicializado correctamente');
+            apex.debug.info('invUtils: Módulo inicializado correctamente');
             return true;
         } catch (error) {
             console.error('invUtils: Error durante la inicialización:', error);
@@ -1414,7 +1425,7 @@ window.invUtils = (function (apex, $) {
                 const grid = apex.region(gridStaticId).call("getViews").grid;
                 const model = grid.model;
 
-                console.log(`🔄 invUtils: Recalculando todas las filas en ${gridStaticId} -> ${config.targetColumn} (delay: ${config.delay}ms)`);
+                apex.debug.info(`🔄 invUtils: Recalculando todas las filas en ${gridStaticId} -> ${config.targetColumn} (delay: ${config.delay}ms)`);
 
                 let processedRows = 0;
                 let skippedRows = 0;
@@ -1424,7 +1435,7 @@ window.invUtils = (function (apex, $) {
                     try {
                         // Verificar si el registro está marcado para eliminación
                         if (esRegistroEliminado(record, model)) {
-                            console.log(`⏭️ invUtils: Saltando registro ${id} - marcado para eliminación`);
+                            apex.debug.info(`⏭️ invUtils: Saltando registro ${id} - marcado para eliminación`);
                             skippedRows++;
                             return; // Continuar con el siguiente registro
                         }
@@ -1457,9 +1468,9 @@ window.invUtils = (function (apex, $) {
                 });
 
                 // Refrescar la vista del grid
-                grid.view$.trigger('refresh');
+                grid.view$.grid('refresh');
 
-                console.log(`✅ invUtils: Recalculación completada - ${processedRows} filas procesadas, ${skippedRows} filas saltadas`);
+                apex.debug.info(`✅ invUtils: Recalculación completada - ${processedRows} filas procesadas, ${skippedRows} filas saltadas`);
                 return true;
 
             } catch (error) {
@@ -1497,14 +1508,14 @@ window.invUtils = (function (apex, $) {
     function leerCelda(gridStaticId, columnName, rowIndex = -1) {
         try {
             // Obtener el modelo usando el método que funciona
-            const model = apex.region(gridStaticId).widget().interactiveGrid("getCurrentView").model;
+            const model = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid").model;
 
             let targetRecord = null;
 
             // Obtener registro objetivo
             if (rowIndex === -1) {
                 // Usar el registro seleccionado
-                const selectedRecords = apex.region(gridStaticId).widget().interactiveGrid("getCurrentView").getSelectedRecords();
+                const selectedRecords = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid").getSelectedRecords();
                 if (selectedRecords && selectedRecords.length > 0) {
                     targetRecord = selectedRecords[0];
                 } else {
@@ -1512,22 +1523,10 @@ window.invUtils = (function (apex, $) {
                     return null;
                 }
             } else {
-                // Obtener registro por índice usando un enfoque más directo
-                console.log(`🔍 invUtils DEBUG: Buscando fila ${rowIndex}, rowIndex-1 = ${rowIndex - 1}`);
-
-                // Usar un array para almacenar todos los registros y acceder por índice
-                const allRecords = [];
-                model.forEach(function (record, index, id) {
-                    allRecords.push(record);
-                });
-
-                const targetIndex = rowIndex - 1; // rowIndex 1 = primera fila (índice 0)
-
-                if (targetIndex >= 0 && targetIndex < allRecords.length) {
-                    targetRecord = allRecords[targetIndex];
-                    console.log(`✅ invUtils DEBUG: Encontrado registro objetivo en índice ${targetIndex} (ID: ${targetRecord.id})`);
-                } else {
-                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId} (total filas: ${allRecords.length})`);
+                // Obtener registro por índice (1 = primera fila vigente)
+                targetRecord = leerRegistroPorIndice(model, rowIndex);
+                if (!targetRecord) {
+                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                     return null;
                 }
             }
@@ -1560,7 +1559,7 @@ window.invUtils = (function (apex, $) {
                 }
             }
 
-            console.log(`📊 invUtils: Valor obtenido de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${finalValue} (tipo: ${typeof finalValue})`);
+            apex.debug.info(`📊 invUtils: Valor obtenido de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${finalValue} (tipo: ${typeof finalValue})`);
             return finalValue;
 
         } catch (error) {
@@ -1597,10 +1596,10 @@ window.invUtils = (function (apex, $) {
      */
     function leerFilaActual(gridStaticId, columns = null) {
         try {
-            console.log(`📊 invUtils: Obteniendo fila actual de ${gridStaticId}`);
+            apex.debug.info(`📊 invUtils: Obteniendo fila actual de ${gridStaticId}`);
 
             // Usar exactamente tu método que funciona
-            const row = apex.region(gridStaticId).call("getCurrentView");
+            const row = apex.region(gridStaticId).call("getViews", "grid");
             const record = row.getContextRecord(document.activeElement);
 
             if (!record || !record[0]) {
@@ -1608,7 +1607,7 @@ window.invUtils = (function (apex, $) {
                 return null;
             }
 
-            console.log(`📊 invUtils: Registro obtenido exitosamente`);
+            apex.debug.info(`📊 invUtils: Registro obtenido exitosamente`);
 
             // Obtener columnas especificadas por el usuario
             let columnsToGet = columns;
@@ -1617,36 +1616,20 @@ window.invUtils = (function (apex, $) {
                 return null;
             }
 
-            console.log(`📊 invUtils: Columnas a obtener: ${columnsToGet.join(', ')}`);
+            apex.debug.info(`📊 invUtils: Columnas a obtener: ${columnsToGet.join(', ')}`);
 
             // Crear objeto con todos los campos de la fila
             const rowData = {};
-
-            // Obtener las columnas del grid para mapear nombres a índices
-            const gridColumns = [];
-            try {
-                if (row.getColumns) {
-                    const columns = row.getColumns();
-                    columns.forEach((col, index) => {
-                        // Usar col.property que es el nombre real de la columna
-                        if (col.property) {
-                            gridColumns.push({ name: col.property, index: col.index });
-                        }
-                    });
-                }
-            } catch (e) {
-                console.warn(`invUtils: Error al obtener columnas del grid:`, e);
-            }
+            const model = row.model;
 
             columnsToGet.forEach(columnName => {
                 try {
                     let value = null;
 
-                    // Buscar el índice de la columna por nombre
-                    const columnInfo = gridColumns.find(col => col.name === columnName);
-                    if (columnInfo) {
-                        value = record[0][columnInfo.index];
-                        console.log(`📊 invUtils: ${columnName} (índice ${columnInfo.index}) = ${value}`);
+                    // Leer por nombre de columna con la API del modelo, sin depender de la posición interna
+                    if (model.getFieldKey(columnName) !== undefined) {
+                        value = model.getValue(record[0], columnName);
+                        apex.debug.info(`📊 invUtils: ${columnName} = ${value}`);
                     } else {
                         console.warn(`invUtils: No se encontró la columna ${columnName} en el grid`);
                         value = null;
@@ -1659,7 +1642,7 @@ window.invUtils = (function (apex, $) {
                 }
             });
 
-            console.log(`✅ invUtils: Fila actual obtenida con ${Object.keys(rowData).length} campos:`, rowData);
+            apex.debug.info(`✅ invUtils: Fila actual obtenida con ${Object.keys(rowData).length} campos:`, rowData);
             return rowData;
 
         } catch (error) {
@@ -1686,14 +1669,14 @@ window.invUtils = (function (apex, $) {
 
             // Si ya es un número, retornarlo directamente
             if (typeof rawValue === 'number') {
-                //console.log(`invUtils: Valor numérico directo de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${rawValue}`);
+                //apex.debug.info(`invUtils: Valor numérico directo de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${rawValue}`);
                 return rawValue;
             }
 
             // Usar la función normalizarNumero existente para manejar formato europeo
             const normalizedValue = normalizarNumero(rawValue);
 
-            //console.log(`invUtils: Valor numérico normalizado de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${normalizedValue}`);
+            //apex.debug.info(`invUtils: Valor numérico normalizado de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${normalizedValue}`);
             return normalizedValue;
 
         } catch (error) {
@@ -1744,7 +1727,7 @@ window.invUtils = (function (apex, $) {
             // Aplicar formato de decimales
             const formattedValue = parseFloat(rawValue.toFixed(decimalPlaces));
 
-            //console.log(`invUtils: Valor con ${decimalPlaces} decimales de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${formattedValue}`);
+            //apex.debug.info(`invUtils: Valor con ${decimalPlaces} decimales de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${formattedValue}`);
             return formattedValue;
 
         } catch (error) {
@@ -1796,7 +1779,7 @@ window.invUtils = (function (apex, $) {
             // Convertir a entero
             const integerValue = Math.round(rawValue);
 
-            //console.log(`invUtils: Valor entero de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${integerValue}`);
+            //apex.debug.info(`invUtils: Valor entero de ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}: ${integerValue}`);
             return integerValue;
 
         } catch (error) {
@@ -1855,7 +1838,7 @@ window.invUtils = (function (apex, $) {
      */
     function asignarCelda(gridStaticId, columnName, rowIndex, value, refresh = true) {
         try {
-            console.log(`🔧 invUtils: Seteando valor ${value} en ${columnName}, fila ${rowIndex}`);
+            apex.debug.info(`🔧 invUtils: Seteando valor ${value} en ${columnName}, fila ${rowIndex}`);
 
             // Validaciones robustas de parámetros
             if (!gridStaticId || typeof gridStaticId !== 'string') {
@@ -1880,21 +1863,21 @@ window.invUtils = (function (apex, $) {
             }
 
             // Obtener el modelo usando el método que funciona
-            const model = apex.region(gridStaticId).widget().interactiveGrid("getCurrentView").model;
+            const model = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid").model;
 
             if (!model) {
                 console.error('invUtils: No se pudo obtener el modelo del grid');
                 return false;
             }
 
-            console.log(`✅ invUtils: Modelo obtenido correctamente`);
+            apex.debug.info(`✅ invUtils: Modelo obtenido correctamente`);
 
             let targetRecord = null;
 
             // Obtener registro objetivo
             if (rowIndex === -1) {
                 // Usar el registro seleccionado
-                const selectedRecords = apex.region(gridStaticId).widget().interactiveGrid("getCurrentView").getSelectedRecords();
+                const selectedRecords = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid").getSelectedRecords();
                 if (selectedRecords && selectedRecords.length > 0) {
                     targetRecord = selectedRecords[0];
                 } else {
@@ -1902,35 +1885,10 @@ window.invUtils = (function (apex, $) {
                     return false;
                 }
             } else {
-                // Obtener registro por índice usando un enfoque más directo
-                console.log(`🔍 invUtils DEBUG: Buscando fila ${rowIndex}, rowIndex-1 = ${rowIndex - 1}`);
-
-                // Usar un array para almacenar todos los registros y acceder por índice
-                const allRecords = [];
-
-                try {
-                    model.forEach(function (record, index, id) {
-                        console.log(`🔍 invUtils DEBUG: Procesando registro - index: ${index}, id: ${id}`);
-                        if (record && typeof record === 'object') {
-                            allRecords.push(record);
-                        } else {
-                            console.warn(`invUtils: Registro inválido encontrado en índice ${index}`);
-                        }
-                    });
-                } catch (forEachError) {
-                    console.error('invUtils: Error en model.forEach:', forEachError);
-                    return false;
-                }
-
-                console.log(`📊 invUtils: Total registros encontrados: ${allRecords.length}`);
-
-                const targetIndex = rowIndex - 1; // rowIndex 1 = primera fila (índice 0)
-
-                if (targetIndex >= 0 && targetIndex < allRecords.length) {
-                    targetRecord = allRecords[targetIndex];
-                    console.log(`✅ invUtils DEBUG: Encontrado registro objetivo en índice ${targetIndex} (ID: ${targetRecord.id})`);
-                } else {
-                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId} (total filas: ${allRecords.length})`);
+                // Obtener registro por índice (1 = primera fila vigente)
+                targetRecord = leerRegistroPorIndice(model, rowIndex);
+                if (!targetRecord) {
+                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                     return false;
                 }
             }
@@ -1940,13 +1898,13 @@ window.invUtils = (function (apex, $) {
                 return false;
             }
 
-            console.log(`✅ invUtils: Registro objetivo obtenido - ID: ${targetRecord.id}`);
+            apex.debug.info(`✅ invUtils: Registro objetivo obtenido - ID: ${targetRecord.id}`);
 
             // Obtener valor actual para comparar
             let currentValue;
             try {
                 currentValue = model.getValue(targetRecord, columnName);
-                console.log(`📊 invUtils: Valor actual en ${columnName}: ${currentValue}`);
+                apex.debug.info(`📊 invUtils: Valor actual en ${columnName}: ${currentValue}`);
             } catch (getValueError) {
                 console.error('invUtils: Error al obtener valor actual:', getValueError);
                 return false;
@@ -1965,7 +1923,7 @@ window.invUtils = (function (apex, $) {
                         return false;
                     }
                 } else {
-                    console.log(`invUtils: Metadata no disponible o recordId no encontrado, continuando...`);
+                    apex.debug.info(`invUtils: Metadata no disponible o recordId no encontrado, continuando...`);
                 }
             } catch (metadataError) {
                 console.warn('invUtils: Error al obtener metadata del registro:', metadataError);
@@ -1985,7 +1943,7 @@ window.invUtils = (function (apex, $) {
                     try {
                         // Formatear al formato europeo (punto como separador de miles, coma como decimal)
                         finalValue = value.toFixed(3).replace('.', ',');
-                        console.log(`📊 invUtils: Valor formateado al formato europeo: ${finalValue}`);
+                        apex.debug.info(`📊 invUtils: Valor formateado al formato europeo: ${finalValue}`);
                     } catch (formatError) {
                         console.error('invUtils: Error al formatear valor:', formatError);
                         finalValue = value; // Usar valor original si falla el formateo
@@ -1996,7 +1954,7 @@ window.invUtils = (function (apex, $) {
             // Establecer el valor usando el método directo que funciona
             try {
                 model.setValue(targetRecord, columnName, finalValue);
-                console.log(`📊 invUtils: Valor establecido: ${finalValue}`);
+                apex.debug.info(`📊 invUtils: Valor establecido: ${finalValue}`);
             } catch (setValueError) {
                 console.error('invUtils: Error al establecer valor:', setValueError);
                 return false;
@@ -2006,7 +1964,7 @@ window.invUtils = (function (apex, $) {
             let verifyValue;
             try {
                 verifyValue = model.getValue(targetRecord, columnName);
-                console.log(`📊 invUtils: Valor después de seteo: ${verifyValue}`);
+                apex.debug.info(`📊 invUtils: Valor después de seteo: ${verifyValue}`);
             } catch (verifyError) {
                 console.error('invUtils: Error al verificar valor:', verifyError);
                 return false;
@@ -2016,13 +1974,13 @@ window.invUtils = (function (apex, $) {
             try {
                 if (model.markDirty) {
                     model.markDirty(targetRecord);
-                    console.log(`✅ invUtils: Registro marcado como dirty`);
+                    apex.debug.info(`✅ invUtils: Registro marcado como dirty`);
                 }
 
                 // Commit del registro individual
                 if (model.commitRecord) {
                     model.commitRecord(targetRecord);
-                    console.log(`✅ invUtils: Registro confirmado`);
+                    apex.debug.info(`✅ invUtils: Registro confirmado`);
                 }
             } catch (commitError) {
                 console.warn('invUtils: Error al confirmar registro:', commitError);
@@ -2033,8 +1991,8 @@ window.invUtils = (function (apex, $) {
                 try {
                     const grid = apex.region(gridStaticId).call("getViews").grid;
                     if (grid.view$ && grid.view$.trigger) {
-                        grid.view$.trigger('refresh');
-                        console.log(`✅ invUtils: Vista refrescada`);
+                        grid.view$.grid('refresh');
+                        apex.debug.info(`✅ invUtils: Vista refrescada`);
                     }
                 } catch (e) {
                     console.warn('invUtils: No se pudo refrescar la vista:', e);
@@ -2044,7 +2002,7 @@ window.invUtils = (function (apex, $) {
             // Verificación final con retry si es necesario
             setTimeout(() => {
                 const finalCheckValue = model.getValue(targetRecord, columnName);
-                console.log(`📊 invUtils: Verificación final - ${columnName}: ${finalCheckValue}`);
+                apex.debug.info(`📊 invUtils: Verificación final - ${columnName}: ${finalCheckValue}`);
 
                 // Si el valor cambió inesperadamente, intentar re-establecerlo
                 if (finalCheckValue !== finalValue && finalCheckValue !== value) {
@@ -2062,13 +2020,13 @@ window.invUtils = (function (apex, $) {
                     setTimeout(() => {
                         const retryValue = model.getValue(targetRecord, columnName);
                         if (retryValue === finalValue || retryValue === value) {
-                            console.log(`✅ invUtils: Valor re-establecido correctamente`);
+                            apex.debug.info(`✅ invUtils: Valor re-establecido correctamente`);
                         } else {
                             console.warn(`⚠️ invUtils: Valor no se pudo mantener estable: ${retryValue}`);
                         }
                     }, 100);
                 } else {
-                    console.log(`✅ invUtils: Valor se mantuvo correctamente`);
+                    apex.debug.info(`✅ invUtils: Valor se mantuvo correctamente`);
                 }
             }, 100);
 
@@ -2170,7 +2128,7 @@ window.invUtils = (function (apex, $) {
             const result = asignarCelda(gridStaticId, columnName, rowIndex, finalValue, refresh);
 
             if (result) {
-                //console.log(`invUtils: Valor numérico ${finalValue} establecido en ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}${decimalPlaces !== null ? ` (con ${decimalPlaces} decimales)` : ''}`);
+                //apex.debug.info(`invUtils: Valor numérico ${finalValue} establecido en ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}${decimalPlaces !== null ? ` (con ${decimalPlaces} decimales)` : ''}`);
             }
 
             return result;
@@ -2261,7 +2219,7 @@ window.invUtils = (function (apex, $) {
      */
     function asignarCeldaConRecalculo(gridStaticId, columnName, rowIndex, value, recalculoConfig, refresh = true) {
         try {
-            console.log(`invUtils: Estableciendo valor ${value} en ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}`);
+            apex.debug.info(`invUtils: Estableciendo valor ${value} en ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}`);
 
             // Establecer el valor
             const result = asignarNumeroCelda(gridStaticId, columnName, rowIndex, value, null, refresh);
@@ -2269,12 +2227,12 @@ window.invUtils = (function (apex, $) {
             if (result && recalculoConfig) {
                 // Esperar un poco para que el valor se guarde
                 setTimeout(function () {
-                    console.log(`invUtils: Ejecutando recálculo automático...`);
+                    apex.debug.info(`invUtils: Ejecutando recálculo automático...`);
 
                     // Ejecutar el recálculo
                     const recalculatedValue = calcularFormula(gridStaticId, recalculoConfig);
 
-                    console.log(`invUtils: Recálculo completado. Nuevo valor en ${recalculoConfig.targetColumn}: ${recalculatedValue}`);
+                    apex.debug.info(`invUtils: Recálculo completado. Nuevo valor en ${recalculoConfig.targetColumn}: ${recalculatedValue}`);
                 }, 50);
             }
 
@@ -2387,10 +2345,10 @@ window.invUtils = (function (apex, $) {
             });
 
             if (doRefresh) {
-                try { if (grid.view$ && grid.view$.trigger) { grid.view$.trigger('refresh'); } } catch (e) { /* noop */ }
+                try { if (grid.view$) { grid.view$.grid('refresh'); } } catch (e) { /* noop */ }
             }
 
-            console.log(`invUtils: asignarFilas completado. Procesados=${processed}, Omitidos=${skipped}`);
+            apex.debug.info(`invUtils: asignarFilas completado. Procesados=${processed}, Omitidos=${skipped}`);
             return true;
 
         } catch (error) {
@@ -2423,18 +2381,19 @@ window.invUtils = (function (apex, $) {
      */
     function irACelda(gridStaticId, columnName, rowIndex = -1, focus = true) {
         try {
-            console.log(`🎯 invUtils: Navegando a celda ${columnName} en fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}`);
+            apex.debug.info(`🎯 invUtils: Navegando a celda ${columnName} en fila ${rowIndex === -1 ? 'seleccionada' : rowIndex}`);
 
             // Obtener el grid usando el método que funciona
             const grid = apex.region(gridStaticId).call("getViews").grid;
-            const model = apex.region(gridStaticId).widget().interactiveGrid("getCurrentView").model;
+            const model = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid").model;
+            const previousFocus = document.activeElement;
 
             let targetRecord = null;
 
             // Obtener registro objetivo
             if (rowIndex === -1) {
                 // Usar el registro seleccionado
-                const selectedRecords = apex.region(gridStaticId).widget().interactiveGrid("getCurrentView").getSelectedRecords();
+                const selectedRecords = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid").getSelectedRecords();
                 if (selectedRecords && selectedRecords.length > 0) {
                     targetRecord = selectedRecords[0];
                 } else {
@@ -2442,18 +2401,8 @@ window.invUtils = (function (apex, $) {
                     return false;
                 }
             } else {
-                // Obtener registro por índice
-                let recordIndex = 0;
-                console.log(`🔍 invUtils DEBUG: Buscando fila ${rowIndex}, rowIndex-1 = ${rowIndex - 1}`);
-                model.forEach(function (record, index, id) {
-                    console.log(`🔍 invUtils DEBUG: recordIndex = ${recordIndex}, index = ${index}, id = ${id}`);
-                    if (recordIndex === rowIndex - 1) {  // rowIndex 1 = primera fila (índice 0)
-                        targetRecord = record;
-                        console.log(`✅ invUtils DEBUG: Encontrado registro objetivo en recordIndex = ${recordIndex}`);
-                        return false; // Salir del forEach
-                    }
-                    recordIndex++;
-                });
+                // Obtener registro por índice (1 = primera fila vigente)
+                targetRecord = leerRegistroPorIndice(model, rowIndex);
 
                 if (!targetRecord) {
                     console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
@@ -2462,24 +2411,13 @@ window.invUtils = (function (apex, $) {
             }
 
             if (targetRecord) {
-                // Navegar a la celda usando el método que funciona
-                grid.gotoCell(targetRecord, columnName);
-                console.log(`✅ invUtils: Navegación a celda ${columnName} completada`);
+                // gotoCell del widget grid recibe el ID del registro; selecciona la fila y enfoca la celda
+                grid.view$.grid("gotoCell", model.getRecordId(targetRecord), columnName);
+                apex.debug.info(`✅ invUtils: Navegación a celda ${columnName} completada`);
 
-                // Hacer focus si está habilitado
-                if (focus) {
-                    setTimeout(() => {
-                        try {
-                            // Intentar hacer focus en la celda
-                            const cellElement = grid.getCellElement ? grid.getCellElement(targetRecord, columnName) : null;
-                            if (cellElement && cellElement.length > 0) {
-                                cellElement.focus();
-                                console.log(`✅ invUtils: Focus en celda aplicado`);
-                            }
-                        } catch (e) {
-                            console.warn(`invUtils: No se pudo aplicar focus:`, e);
-                        }
-                    }, 100);
+                // Sin foco solicitado: devolverlo al elemento que lo tenía antes de navegar
+                if (!focus && previousFocus && previousFocus !== document.activeElement) {
+                    previousFocus.focus();
                 }
 
                 return true;
@@ -2499,7 +2437,8 @@ window.invUtils = (function (apex, $) {
      * @param {string} columnName - Nombre de la columna
      */
     function irAPrimeraCelda(gridStaticId, columnName) {
-        return irACelda(gridStaticId, columnName, 0, true);
+        // rowIndex empieza en 1; con 0 la búsqueda siempre quedaba fuera de rango
+        return irACelda(gridStaticId, columnName, 1, true);
     }
 
     /**
@@ -2510,7 +2449,7 @@ window.invUtils = (function (apex, $) {
      */
     function irACeldaSeleccionada(gridStaticId, columnName) {
         try {
-            console.log(`🎯 invUtils: Navegando a celda seleccionada ${columnName} en ${gridStaticId}`);
+            apex.debug.info(`🎯 invUtils: Navegando a celda seleccionada ${columnName} en ${gridStaticId}`);
 
             // Obtener el grid usando el método directo
             var grid = apex.region(gridStaticId).call("getViews").grid;
@@ -2524,10 +2463,10 @@ window.invUtils = (function (apex, $) {
                 return false;
             }
 
-            // Navegar a la celda usando el método directo
-            grid.gotoCell(array[0][1], columnName);
+            // gotoCell del widget grid recibe el ID del registro
+            grid.view$.grid("gotoCell", grid.model.getRecordId(array[0]), columnName);
 
-            console.log(`✅ invUtils: Navegación a celda ${columnName} completada`);
+            apex.debug.info(`✅ invUtils: Navegación a celda ${columnName} completada`);
             return true;
 
         } catch (error) {
@@ -2545,21 +2484,25 @@ window.invUtils = (function (apex, $) {
             focusRestorationEnabled = enable;
 
             if (enable) {
-                /* console.log('invUtils: Sistema de re-enfoque automático inicializado'); */
+                /* apex.debug.info('invUtils: Sistema de re-enfoque automático inicializado'); */
 
                 // Captura el foco cuando el usuario está dentro del IG
                 $(document).off('focusin.invUtils').on('focusin.invUtils', '.a-GV-cell', function () {
                     lastFocusedCell = this;
-                    /* console.log('invUtils: Celda enfocada capturada:', this); */
+                    /* apex.debug.info('invUtils: Celda enfocada capturada:', this); */
                 });
 
                 // Cuando vuelve el foco al navegador, intenta restaurar el enfoque
                 $(window).off('focus.invUtils').on('focus.invUtils', function () {
+                    // Tras un refresco de la grilla la celda guardada puede ya no estar en la página
+                    if (lastFocusedCell && !document.contains(lastFocusedCell)) {
+                        lastFocusedCell = null;
+                    }
                     if (lastFocusedCell && focusRestorationEnabled) {
                         setTimeout(() => {
                             try {
                                 lastFocusedCell.focus();
-                                /* console.log('invUtils: Foco restaurado en celda'); */
+                                /* apex.debug.info('invUtils: Foco restaurado en celda'); */
                             } catch (error) {
                                 console.warn('invUtils: Error al restaurar foco:', error);
                                 lastFocusedCell = null; // Limpiar referencia inválida
@@ -2568,13 +2511,13 @@ window.invUtils = (function (apex, $) {
                     }
                 });
 
-                console.log('invUtils: Eventos de re-enfoque configurados');
+                apex.debug.info('invUtils: Eventos de re-enfoque configurados');
             } else {
                 // Deshabilitar el sistema
                 $(document).off('focusin.invUtils');
                 $(window).off('focus.invUtils');
                 lastFocusedCell = null;
-                /* console.log('invUtils: Sistema de re-enfoque automático deshabilitado'); */
+                /* apex.debug.info('invUtils: Sistema de re-enfoque automático deshabilitado'); */
             }
 
             return true;
@@ -2614,7 +2557,7 @@ window.invUtils = (function (apex, $) {
     function asignarUltimoFoco(cellElement) {
         if (cellElement && cellElement.classList && cellElement.classList.contains('a-GV-cell')) {
             lastFocusedCell = cellElement;
-            /* console.log('invUtils: Última celda enfocada establecida manualmente'); */
+            /* apex.debug.info('invUtils: Última celda enfocada establecida manualmente'); */
             return true;
         } else {
             console.warn('invUtils: Elemento no es una celda válida del Interactive Grid');
@@ -2629,11 +2572,15 @@ window.invUtils = (function (apex, $) {
      */
     function restaurarFoco(delay = 50) {
         try {
+            // Tras un refresco de la grilla la celda guardada puede ya no estar en la página
+            if (lastFocusedCell && !document.contains(lastFocusedCell)) {
+                lastFocusedCell = null;
+            }
             if (lastFocusedCell && focusRestorationEnabled) {
                 setTimeout(() => {
                     try {
                         lastFocusedCell.focus();
-                        /* console.log('invUtils: Foco restaurado manualmente'); */
+                        /* apex.debug.info('invUtils: Foco restaurado manualmente'); */
                         return true;
                     } catch (error) {
                         console.warn('invUtils: Error al restaurar foco manualmente:', error);
@@ -2657,7 +2604,7 @@ window.invUtils = (function (apex, $) {
      */
     function limpiarReferenciaFoco() {
         lastFocusedCell = null;
-        /* console.log('invUtils: Referencia de última celda enfocada limpiada'); */
+        /* apex.debug.info('invUtils: Referencia de última celda enfocada limpiada'); */
     }
 
     /**
@@ -2690,14 +2637,14 @@ window.invUtils = (function (apex, $) {
      */
     function refrescarRegion(gridStaticId, refreshRegion = true) {
         try {
-            console.log(`🔄 invUtils: Refrescando grid ${gridStaticId}`);
+            apex.debug.info(`🔄 invUtils: Refrescando grid ${gridStaticId}`);
 
             const grid = apex.region(gridStaticId).call("getViews").grid;
 
             // Refrescar vista del grid
             try {
-                grid.view$.trigger('refresh');
-                console.log(`✅ invUtils: Vista del grid ${gridStaticId} refrescada`);
+                grid.view$.grid('refresh');
+                apex.debug.info(`✅ invUtils: Vista del grid ${gridStaticId} refrescada`);
             } catch (e) {
                 console.warn(`invUtils: No se pudo refrescar vista del grid ${gridStaticId}:`, e);
             }
@@ -2708,7 +2655,7 @@ window.invUtils = (function (apex, $) {
                     const region = apex.region(gridStaticId).widget().interactiveGrid('getViews').grid;
                     region.model.clearChanges();
                     apex.region(gridStaticId).refresh();
-                    console.log(`✅ invUtils: Región ${gridStaticId} refrescada`);
+                    apex.debug.info(`✅ invUtils: Región ${gridStaticId} refrescada`);
                 } catch (e) {
                     console.warn(`invUtils: No se pudo refrescar región ${gridStaticId}:`, e);
                 }
@@ -2735,8 +2682,8 @@ window.invUtils = (function (apex, $) {
             // Refrescar la vista del grid
             try {
                 // Método correcto para Interactive Grids de APEX
-                grid.view$.trigger('refresh');
-                console.log(`invUtils: Grid ${gridStaticId} refrescado`);
+                grid.view$.grid('refresh');
+                apex.debug.info(`invUtils: Grid ${gridStaticId} refrescado`);
             } catch (e) {
                 console.warn(`invUtils: No se pudo refrescar grid ${gridStaticId}:`, e);
             }
@@ -2765,7 +2712,7 @@ window.invUtils = (function (apex, $) {
      */
     function refrescarCalculosRegistrados(gridStaticId, targetColumn = null, delay = 100) {
         try {
-            console.log(`🔄 invUtils: Refrescando y recalculando ${gridStaticId}${targetColumn ? ` -> ${targetColumn}` : ''}`);
+            apex.debug.info(`🔄 invUtils: Refrescando y recalculando ${gridStaticId}${targetColumn ? ` -> ${targetColumn}` : ''}`);
 
             // Primero refrescar el grid
             refrescarRegion(gridStaticId, true);
@@ -2792,7 +2739,7 @@ window.invUtils = (function (apex, $) {
      */
     function confirmarCambios(gridStaticId, commitAll = true, forceDirty = true) {
         try {
-            console.log(`💾 invUtils: Confirmando cambios en ${gridStaticId}`);
+            apex.debug.info(`💾 invUtils: Confirmando cambios en ${gridStaticId}`);
 
             const grid = apex.region(gridStaticId).call("getViews").grid;
             const model = grid.model;
@@ -2847,7 +2794,7 @@ window.invUtils = (function (apex, $) {
                             }
 
                             changesCommitted++;
-                            console.log(`💾 invUtils: Registro confirmado en ${gridStaticId}`);
+                            apex.debug.info(`💾 invUtils: Registro confirmado en ${gridStaticId}`);
                         }
                     } catch (recordError) {
                         console.warn(`invUtils: Error al confirmar registro individual:`, recordError);
@@ -2858,7 +2805,7 @@ window.invUtils = (function (apex, $) {
                 try {
                     if (model.commit) {
                         model.commit();
-                        console.log(`💾 invUtils: Modelo completo confirmado en ${gridStaticId}`);
+                        apex.debug.info(`💾 invUtils: Modelo completo confirmado en ${gridStaticId}`);
                     }
                 } catch (commitError) {
                     console.warn(`invUtils: Error al confirmar modelo completo:`, commitError);
@@ -2869,7 +2816,7 @@ window.invUtils = (function (apex, $) {
                 try {
                     const array = grid.getSelectedRecords();
                     if (array && array.length > 0) {
-                        const selectedRecord = array[0][1];
+                        const selectedRecord = array[0];
 
                         // Forzar estado dirty si está habilitado
                         if (forceDirty) {
@@ -2890,14 +2837,14 @@ window.invUtils = (function (apex, $) {
                         }
 
                         changesCommitted = 1;
-                        console.log(`💾 invUtils: Registro seleccionado confirmado en ${gridStaticId}`);
+                        apex.debug.info(`💾 invUtils: Registro seleccionado confirmado en ${gridStaticId}`);
                     }
                 } catch (selectedError) {
                     console.warn(`invUtils: Error al confirmar registro seleccionado:`, selectedError);
                 }
             }
 
-            console.log(`✅ invUtils: ${changesCommitted} cambios confirmados en ${gridStaticId}`);
+            apex.debug.info(`✅ invUtils: ${changesCommitted} cambios confirmados en ${gridStaticId}`);
             return true;
 
         } catch (error) {
@@ -2914,7 +2861,7 @@ window.invUtils = (function (apex, $) {
      */
     function refrescarVista(gridStaticId, commitChanges = true) {
         try {
-            console.log(`🔄 invUtils: Refrescando solo vista de ${gridStaticId}`);
+            apex.debug.info(`🔄 invUtils: Refrescando solo vista de ${gridStaticId}`);
 
             const grid = apex.region(gridStaticId).call("getViews").grid;
 
@@ -2923,42 +2870,14 @@ window.invUtils = (function (apex, $) {
                 confirmarCambios(gridStaticId, true);
             }
 
-            // Refrescar solo la vista del grid (sin recargar datos)
+            // Refrescar solo la vista del grid (sin recargar datos) con el método documentado del widget
             try {
-                // Método 1: Refrescar vista del grid
-                if (grid.view$ && grid.view$.trigger) {
-                    grid.view$.trigger('refresh');
-                    console.log(`✅ invUtils: Vista del grid ${gridStaticId} refrescada`);
-                }
-
-                // Método 2: Refrescar vista usando el método del grid
-                if (grid.refreshView) {
-                    grid.refreshView();
-                    console.log(`✅ invUtils: Vista del grid ${gridStaticId} refrescada usando refreshView()`);
-                }
-
-                // Método 3: Refrescar usando el método de la vista
-                if (grid.getView && grid.getView().refresh) {
-                    grid.getView().refresh();
-                    console.log(`✅ invUtils: Vista del grid ${gridStaticId} refrescada usando getView().refresh()`);
-                }
-
+                grid.view$.grid('refresh');
+                apex.debug.info(`✅ invUtils: Vista del grid ${gridStaticId} refrescada`);
                 return true;
 
             } catch (viewError) {
                 console.warn(`invUtils: Error al refrescar vista del grid ${gridStaticId}:`, viewError);
-
-                // Fallback: intentar refrescar usando el método de la región (pero solo vista)
-                try {
-                    if (grid.view$ && grid.view$.grid) {
-                        grid.view$.grid('refresh');
-                        console.log(`✅ invUtils: Vista del grid ${gridStaticId} refrescada usando fallback`);
-                        return true;
-                    }
-                } catch (fallbackError) {
-                    console.warn(`invUtils: Error en fallback para ${gridStaticId}:`, fallbackError);
-                }
-
                 return false;
             }
 
@@ -2977,7 +2896,7 @@ window.invUtils = (function (apex, $) {
      */
     function refrescarConConfirmacion(gridStaticId, commitChanges = true, refreshRegion = false) {
         try {
-            console.log(`🛡️ invUtils: Refrescando grid de manera segura ${gridStaticId}`);
+            apex.debug.info(`🛡️ invUtils: Refrescando grid de manera segura ${gridStaticId}`);
 
             // Confirmar cambios primero
             if (commitChanges) {
@@ -2996,7 +2915,7 @@ window.invUtils = (function (apex, $) {
                             const grid = apex.region(gridStaticId).widget().interactiveGrid('getViews').grid;
                             grid.model.clearChanges();
                             apex.region(gridStaticId).refresh();
-                            console.log(`✅ invUtils: Región ${gridStaticId} refrescada de manera segura`);
+                            apex.debug.info(`✅ invUtils: Región ${gridStaticId} refrescada de manera segura`);
                         } catch (regionError) {
                             console.warn(`invUtils: No se pudo refrescar región ${gridStaticId}:`, regionError);
                         }
@@ -3022,7 +2941,7 @@ window.invUtils = (function (apex, $) {
      */
     function marcarFila(gridStaticId, rowIndex = -1) {
         try {
-            console.log(`🔄 invUtils: Forzando estado dirty en ${gridStaticId}, fila ${rowIndex}`);
+            apex.debug.info(`🔄 invUtils: Forzando estado dirty en ${gridStaticId}, fila ${rowIndex}`);
 
             const grid = apex.region(gridStaticId).call("getViews").grid;
             const model = grid.model;
@@ -3033,20 +2952,14 @@ window.invUtils = (function (apex, $) {
             if (rowIndex === -1) {
                 const array = grid.getSelectedRecords();
                 if (array && array.length > 0) {
-                    targetRow = array[0][1];
+                    targetRow = array[0];
                 } else {
                     console.warn(`invUtils: No hay fila seleccionada en ${gridStaticId}`);
                     return false;
                 }
             } else {
-                const allRecords = [];
-                model.forEach(function (record) {
-                    allRecords.push(record);
-                });
-
-                if (allRecords.length >= rowIndex && rowIndex > 0) {
-                    targetRow = allRecords[rowIndex - 1];
-                } else {
+                targetRow = leerRegistroPorIndice(model, rowIndex);
+                if (!targetRow) {
                     console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                     return false;
                 }
@@ -3075,7 +2988,7 @@ window.invUtils = (function (apex, $) {
      */
     function marcarRegistro(model, targetRow, columnName = null) {
         try {
-            console.log(`🔄 invUtils: Forzando dirty state usando múltiples métodos...`);
+            apex.debug.info(`🔄 invUtils: Forzando dirty state usando múltiples métodos...`);
 
             let successCount = 0;
 
@@ -3084,7 +2997,7 @@ window.invUtils = (function (apex, $) {
                 if (model.markDirty) {
                     model.markDirty(targetRow);
                     successCount++;
-                    console.log(`✅ invUtils: Dirty state usando markDirty()`);
+                    apex.debug.info(`✅ invUtils: Dirty state usando markDirty()`);
                 }
             } catch (e) {
                 console.warn(`invUtils: Error con markDirty:`, e);
@@ -3095,7 +3008,7 @@ window.invUtils = (function (apex, $) {
                 if (model.setDirty) {
                     model.setDirty(targetRow, true);
                     successCount++;
-                    console.log(`✅ invUtils: Dirty state usando model.setDirty()`);
+                    apex.debug.info(`✅ invUtils: Dirty state usando model.setDirty()`);
                 }
             } catch (e) {
                 console.warn(`invUtils: Error con model.setDirty:`, e);
@@ -3106,7 +3019,7 @@ window.invUtils = (function (apex, $) {
                 if (targetRow.setDirty) {
                     targetRow.setDirty(true);
                     successCount++;
-                    console.log(`✅ invUtils: Dirty state usando record.setDirty()`);
+                    apex.debug.info(`✅ invUtils: Dirty state usando record.setDirty()`);
                 }
             } catch (e) {
                 console.warn(`invUtils: Error con record.setDirty:`, e);
@@ -3119,7 +3032,7 @@ window.invUtils = (function (apex, $) {
                     if (currentValue !== undefined) {
                         model.setValue(targetRow, columnName, currentValue, { dirty: true });
                         successCount++;
-                        console.log(`✅ invUtils: Dirty state usando setValue con opciones`);
+                        apex.debug.info(`✅ invUtils: Dirty state usando setValue con opciones`);
                     }
                 }
             } catch (e) {
@@ -3131,7 +3044,7 @@ window.invUtils = (function (apex, $) {
                 if (model.updateRecord) {
                     model.updateRecord(targetRow);
                     successCount++;
-                    console.log(`✅ invUtils: Dirty state usando updateRecord()`);
+                    apex.debug.info(`✅ invUtils: Dirty state usando updateRecord()`);
                 }
             } catch (e) {
                 console.warn(`invUtils: Error con updateRecord:`, e);
@@ -3145,14 +3058,14 @@ window.invUtils = (function (apex, $) {
                         // Re-establecer el valor para forzar dirty state
                         model.setValue(targetRow, columnName, currentValue);
                         successCount++;
-                        console.log(`✅ invUtils: Dirty state usando re-establecimiento de valor`);
+                        apex.debug.info(`✅ invUtils: Dirty state usando re-establecimiento de valor`);
                     }
                 }
             } catch (e) {
                 console.warn(`invUtils: Error con re-establecimiento:`, e);
             }
 
-            console.log(`📊 invUtils: ${successCount} métodos de dirty state ejecutados exitosamente`);
+            apex.debug.info(`📊 invUtils: ${successCount} métodos de dirty state ejecutados exitosamente`);
             return successCount > 0;
 
         } catch (error) {
@@ -3186,25 +3099,16 @@ window.invUtils = (function (apex, $) {
             if (rowIndex === -1) {
                 const array = grid.getSelectedRecords();
                 if (array && array.length > 0) {
-                    targetRow = array[0][1];
+                    targetRow = array[0];
                 } else {
                     console.warn(`invUtils: No hay fila seleccionada en ${gridStaticId}`);
                     return false;
                 }
             } else {
-                // Convertir rowIndex a índice interno (rowIndex - 1)
-                const internalIndex = rowIndex - 1;
-
-                // Obtener todas las filas del modelo, no solo las seleccionadas
-                const allRecords = [];
-                grid.model.forEach(function (record) {
-                    allRecords.push(record);
-                });
-
-                if (allRecords.length > internalIndex && internalIndex >= 0) {
-                    targetRow = allRecords[internalIndex];
-                } else {
-                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId} (total filas: ${allRecords.length})`);
+                // Obtener registro por índice (1 = primera fila vigente)
+                targetRow = leerRegistroPorIndice(grid.model, rowIndex);
+                if (!targetRow) {
+                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                     return false;
                 }
             }
@@ -3251,14 +3155,14 @@ window.invUtils = (function (apex, $) {
                 if (refresh) {
                     try {
                         // Método correcto para Interactive Grids de APEX
-                        grid.view$.trigger('refresh');
-                        //console.log(`invUtils: Vista refrescada usando grid.view$.trigger('refresh')`);
+                        grid.view$.grid('refresh');
+                        //apex.debug.info(`invUtils: Vista refrescada usando grid.view$.grid('refresh')`);
                     } catch (e) {
                         console.warn('invUtils: No se pudo refrescar la vista:', e);
                     }
                 }
 
-                //console.log(`invUtils: Valor ${finalValue} establecido en ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex} con commit`);
+                //apex.debug.info(`invUtils: Valor ${finalValue} establecido en ${columnName}, fila ${rowIndex === -1 ? 'seleccionada' : rowIndex} con commit`);
                 return true;
             }
 
@@ -3308,7 +3212,7 @@ window.invUtils = (function (apex, $) {
      */
     function asignarNumeroSinFormato(gridStaticId, columnName, rowIndex, value, decimalPlaces = null, refresh = true) {
         try {
-            console.log(`🔧 invUtils: Seteando valor robusto ${value} en ${columnName}, fila ${rowIndex}`);
+            apex.debug.info(`🔧 invUtils: Seteando valor robusto ${value} en ${columnName}, fila ${rowIndex}`);
 
             // Obtener el grid
             const grid = apex.region(gridStaticId).call("getViews").grid;
@@ -3320,21 +3224,15 @@ window.invUtils = (function (apex, $) {
             if (rowIndex === -1) {
                 const array = grid.getSelectedRecords();
                 if (array && array.length > 0) {
-                    targetRow = array[0][1];
+                    targetRow = array[0];
                 } else {
                     console.warn(`invUtils: No hay fila seleccionada en ${gridStaticId}`);
                     return false;
                 }
             } else {
-                const allRecords = [];
-                model.forEach(function (record) {
-                    allRecords.push(record);
-                });
-
-                if (allRecords.length >= rowIndex && rowIndex > 0) {
-                    targetRow = allRecords[rowIndex - 1];
-                } else {
-                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId} (total filas: ${allRecords.length})`);
+                targetRow = leerRegistroPorIndice(model, rowIndex);
+                if (!targetRow) {
+                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                     return false;
                 }
             }
@@ -3346,7 +3244,7 @@ window.invUtils = (function (apex, $) {
 
             // Obtener valor actual para comparar
             const currentValue = model.getValue(targetRow, columnName);
-            console.log(`📊 invUtils: Valor actual en ${columnName}: ${currentValue} (tipo: ${typeof currentValue})`);
+            apex.debug.info(`📊 invUtils: Valor actual en ${columnName}: ${currentValue} (tipo: ${typeof currentValue})`);
 
             // Formatear valor si es necesario - MANEJAR FORMATO EUROPEO
             let finalValue = value;
@@ -3365,7 +3263,7 @@ window.invUtils = (function (apex, $) {
                 finalValue = parseFloat(value.toFixed(validDecimalPlaces));
             }
 
-            console.log(`📊 invUtils: Valor final a establecer: ${finalValue} (tipo: ${typeof finalValue})`);
+            apex.debug.info(`📊 invUtils: Valor final a establecer: ${finalValue} (tipo: ${typeof finalValue})`);
 
             // Deshabilitar temporalmente los formateadores
             try {
@@ -3382,7 +3280,7 @@ window.invUtils = (function (apex, $) {
 
             // Verificar que se estableció correctamente
             const verifyValue = model.getValue(targetRow, columnName);
-            console.log(`📊 invUtils: Valor después de setear: ${verifyValue} (tipo: ${typeof verifyValue})`);
+            apex.debug.info(`📊 invUtils: Valor después de setear: ${verifyValue} (tipo: ${typeof verifyValue})`);
 
             // Forzar persistencia del cambio
             try {
@@ -3401,7 +3299,7 @@ window.invUtils = (function (apex, $) {
                     model.commit();
                 }
 
-                console.log(`✅ invUtils: Cambio persistido correctamente`);
+                apex.debug.info(`✅ invUtils: Cambio persistido correctamente`);
 
             } catch (commitError) {
                 console.warn('invUtils: Error al hacer commit:', commitError);
@@ -3420,7 +3318,7 @@ window.invUtils = (function (apex, $) {
             if (refresh) {
                 try {
                     // Refrescar la vista del grid
-                    grid.view$.trigger('refresh');
+                    grid.view$.grid('refresh');
 
                     // Alternativa: refrescar la región completa
                     setTimeout(() => {
@@ -3431,7 +3329,7 @@ window.invUtils = (function (apex, $) {
                         }
                     }, 100);
 
-                    console.log(`🔄 invUtils: Vista refrescada`);
+                    apex.debug.info(`🔄 invUtils: Vista refrescada`);
 
                 } catch (refreshError) {
                     console.warn('invUtils: Error al refrescar vista:', refreshError);
@@ -3441,7 +3339,7 @@ window.invUtils = (function (apex, $) {
             // Verificación final
             setTimeout(() => {
                 const finalCheckValue = model.getValue(targetRow, columnName);
-                console.log(`📊 invUtils: Verificación final - ${columnName}: ${finalCheckValue} (tipo: ${typeof finalCheckValue})`);
+                apex.debug.info(`📊 invUtils: Verificación final - ${columnName}: ${finalCheckValue} (tipo: ${typeof finalCheckValue})`);
 
                 // Comparar valores normalizados para evitar problemas de formato
                 const normalizedExpected = typeof finalValue === 'number' ? finalValue : parseFloat(String(finalValue).replace(',', '.'));
@@ -3450,7 +3348,7 @@ window.invUtils = (function (apex, $) {
                 if (Math.abs(normalizedExpected - normalizedActual) > 0.001) {
                     console.warn(`⚠️ invUtils: Valor no se mantuvo - Esperado: ${finalValue}, Actual: ${finalCheckValue}`);
                 } else {
-                    console.log(`✅ invUtils: Valor se mantuvo correctamente`);
+                    apex.debug.info(`✅ invUtils: Valor se mantuvo correctamente`);
                 }
             }, 200);
 
@@ -3500,7 +3398,7 @@ window.invUtils = (function (apex, $) {
      */
     function asignarNumeroEuropeo(gridStaticId, columnName, rowIndex, value, decimalPlaces = 2, refresh = true) {
         try {
-            console.log(`🇪🇺 invUtils: Seteando valor europeo ${value} en ${columnName}, fila ${rowIndex}`);
+            apex.debug.info(`🇪🇺 invUtils: Seteando valor europeo ${value} en ${columnName}, fila ${rowIndex}`);
 
             // Obtener el grid
             const grid = apex.region(gridStaticId).call("getViews").grid;
@@ -3512,21 +3410,15 @@ window.invUtils = (function (apex, $) {
             if (rowIndex === -1) {
                 const array = grid.getSelectedRecords();
                 if (array && array.length > 0) {
-                    targetRow = array[0][1];
+                    targetRow = array[0];
                 } else {
                     console.warn(`invUtils: No hay fila seleccionada en ${gridStaticId}`);
                     return false;
                 }
             } else {
-                const allRecords = [];
-                model.forEach(function (record) {
-                    allRecords.push(record);
-                });
-
-                if (allRecords.length >= rowIndex && rowIndex > 0) {
-                    targetRow = allRecords[rowIndex - 1];
-                } else {
-                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId} (total filas: ${allRecords.length})`);
+                targetRow = leerRegistroPorIndice(model, rowIndex);
+                if (!targetRow) {
+                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                     return false;
                 }
             }
@@ -3538,18 +3430,18 @@ window.invUtils = (function (apex, $) {
 
             // Obtener valor actual para comparar
             const currentValue = model.getValue(targetRow, columnName);
-            console.log(`📊 invUtils: Valor actual en ${columnName}: ${currentValue} (tipo: ${typeof currentValue})`);
+            apex.debug.info(`📊 invUtils: Valor actual en ${columnName}: ${currentValue} (tipo: ${typeof currentValue})`);
 
             // Formatear valor al formato europeo
             const europeanValue = formatearNumeroEuropeo(value, decimalPlaces, true);
-            console.log(`🇪🇺 invUtils: Valor formateado europeo: ${europeanValue}`);
+            apex.debug.info(`🇪🇺 invUtils: Valor formateado europeo: ${europeanValue}`);
 
             // Establecer el valor como string formateado
             model.setValue(targetRow, columnName, europeanValue);
 
             // Verificar que se estableció correctamente
             const verifyValue = model.getValue(targetRow, columnName);
-            console.log(`📊 invUtils: Valor después de setear: ${verifyValue} (tipo: ${typeof verifyValue})`);
+            apex.debug.info(`📊 invUtils: Valor después de setear: ${verifyValue} (tipo: ${typeof verifyValue})`);
 
             // Forzar persistencia del cambio
             try {
@@ -3563,7 +3455,7 @@ window.invUtils = (function (apex, $) {
                     model.commitRecord(targetRow);
                 }
 
-                console.log(`✅ invUtils: Cambio persistido correctamente`);
+                apex.debug.info(`✅ invUtils: Cambio persistido correctamente`);
 
             } catch (commitError) {
                 console.warn('invUtils: Error al hacer commit:', commitError);
@@ -3573,7 +3465,7 @@ window.invUtils = (function (apex, $) {
             if (refresh) {
                 try {
                     // Refrescar la vista del grid
-                    grid.view$.trigger('refresh');
+                    grid.view$.grid('refresh');
 
                     // Alternativa: refrescar la región completa
                     setTimeout(() => {
@@ -3584,7 +3476,7 @@ window.invUtils = (function (apex, $) {
                         }
                     }, 100);
 
-                    console.log(`🔄 invUtils: Vista refrescada`);
+                    apex.debug.info(`🔄 invUtils: Vista refrescada`);
 
                 } catch (refreshError) {
                     console.warn('invUtils: Error al refrescar vista:', refreshError);
@@ -3594,10 +3486,10 @@ window.invUtils = (function (apex, $) {
             // Verificación final
             setTimeout(() => {
                 const finalCheckValue = model.getValue(targetRow, columnName);
-                console.log(`📊 invUtils: Verificación final - ${columnName}: ${finalCheckValue} (tipo: ${typeof finalCheckValue})`);
+                apex.debug.info(`📊 invUtils: Verificación final - ${columnName}: ${finalCheckValue} (tipo: ${typeof finalCheckValue})`);
 
                 if (finalCheckValue === europeanValue) {
-                    console.log(`✅ invUtils: Valor europeo se mantuvo correctamente`);
+                    apex.debug.info(`✅ invUtils: Valor europeo se mantuvo correctamente`);
                 } else {
                     console.warn(`⚠️ invUtils: Valor europeo no se mantuvo - Esperado: ${europeanValue}, Actual: ${finalCheckValue}`);
                 }
@@ -3649,7 +3541,7 @@ window.invUtils = (function (apex, $) {
      */
     function asignarCeldaMarcada(gridStaticId, columnName, rowIndex, value, refresh = true, forceDirty = true) {
         try {
-            console.log(`🔧 invUtils: Seteando valor con dirty ${value} en ${columnName}, fila ${rowIndex}`);
+            apex.debug.info(`🔧 invUtils: Seteando valor con dirty ${value} en ${columnName}, fila ${rowIndex}`);
 
             // Obtener el grid usando el método que funciona
             const grid = apex.region(gridStaticId).call("getViews").grid;
@@ -3661,25 +3553,16 @@ window.invUtils = (function (apex, $) {
             if (rowIndex === -1) {
                 const array = grid.getSelectedRecords();
                 if (array && array.length > 0) {
-                    targetRow = array[0][1];
+                    targetRow = array[0];
                 } else {
                     console.warn(`invUtils: No hay fila seleccionada en ${gridStaticId}`);
                     return false;
                 }
             } else {
-                // Convertir rowIndex a índice interno (rowIndex - 1)
-                const internalIndex = rowIndex - 1;
-
-                // Obtener todas las filas del modelo, no solo las seleccionadas
-                const allRecords = [];
-                model.forEach(function (record) {
-                    allRecords.push(record);
-                });
-
-                if (allRecords.length > internalIndex && internalIndex >= 0) {
-                    targetRow = allRecords[internalIndex];
-                } else {
-                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId} (total filas: ${allRecords.length})`);
+                // Obtener registro por índice (1 = primera fila vigente)
+                targetRow = leerRegistroPorIndice(model, rowIndex);
+                if (!targetRow) {
+                    console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                     return false;
                 }
             }
@@ -3687,21 +3570,21 @@ window.invUtils = (function (apex, $) {
             if (targetRow) {
                 // Obtener valor actual para comparar
                 const currentValue = model.getValue(targetRow, columnName);
-                console.log(`📊 invUtils: Valor actual en ${columnName}: ${currentValue}`);
+                apex.debug.info(`📊 invUtils: Valor actual en ${columnName}: ${currentValue}`);
 
                 // Establecer el valor en el modelo
                 model.setValue(targetRow, columnName, value);
-                console.log(`📊 invUtils: Valor establecido: ${value}`);
+                apex.debug.info(`📊 invUtils: Valor establecido: ${value}`);
 
                 // Forzar estado dirty si está habilitado
                 if (forceDirty) {
-                    console.log(`🔄 invUtils: Forzando estado dirty...`);
+                    apex.debug.info(`🔄 invUtils: Forzando estado dirty...`);
 
                     // Usar la función mejorada para forzar dirty state
                     const dirtySuccess = marcarRegistro(model, targetRow, columnName);
 
                     if (dirtySuccess) {
-                        console.log(`✅ invUtils: Estado dirty forzado exitosamente`);
+                        apex.debug.info(`✅ invUtils: Estado dirty forzado exitosamente`);
                     } else {
                         console.warn(`⚠️ invUtils: No se pudo forzar estado dirty`);
                     }
@@ -3711,8 +3594,8 @@ window.invUtils = (function (apex, $) {
                 if (refresh) {
                     try {
                         // Método correcto para Interactive Grids de APEX
-                        grid.view$.trigger('refresh');
-                        console.log(`✅ invUtils: Vista refrescada`);
+                        grid.view$.grid('refresh');
+                        apex.debug.info(`✅ invUtils: Vista refrescada`);
                     } catch (e) {
                         console.warn('invUtils: No se pudo refrescar la vista:', e);
                     }
@@ -3721,7 +3604,7 @@ window.invUtils = (function (apex, $) {
                 // Verificación final
                 setTimeout(() => {
                     const finalValue = model.getValue(targetRow, columnName);
-                    console.log(`📊 invUtils: Verificación final - ${columnName}: ${finalValue}`);
+                    apex.debug.info(`📊 invUtils: Verificación final - ${columnName}: ${finalValue}`);
 
                     // Verificar si el registro está marcado como dirty usando múltiples métodos
                     let isDirty = false;
@@ -3730,7 +3613,7 @@ window.invUtils = (function (apex, $) {
                         // Método 1: Usar isDirty del modelo
                         if (model.isDirty && model.isDirty(targetRow)) {
                             isDirty = true;
-                            console.log(`✅ invUtils: Registro confirmado como dirty usando model.isDirty()`);
+                            apex.debug.info(`✅ invUtils: Registro confirmado como dirty usando model.isDirty()`);
                         }
                     } catch (e) {
                         console.warn(`invUtils: Error con model.isDirty:`, e);
@@ -3740,7 +3623,7 @@ window.invUtils = (function (apex, $) {
                         // Método 2: Usar isDirty del registro
                         if (targetRow.isDirty && targetRow.isDirty()) {
                             isDirty = true;
-                            console.log(`✅ invUtils: Registro confirmado como dirty usando record.isDirty()`);
+                            apex.debug.info(`✅ invUtils: Registro confirmado como dirty usando record.isDirty()`);
                         }
                     } catch (e) {
                         console.warn(`invUtils: Error con record.isDirty:`, e);
@@ -3750,7 +3633,7 @@ window.invUtils = (function (apex, $) {
                         // Método 3: Verificar si el registro tiene propiedades de modificación
                         if (targetRow.isModified && targetRow.isModified()) {
                             isDirty = true;
-                            console.log(`✅ invUtils: Registro confirmado como modified usando isModified()`);
+                            apex.debug.info(`✅ invUtils: Registro confirmado como modified usando isModified()`);
                         }
                     } catch (e) {
                         console.warn(`invUtils: Error con isModified:`, e);
@@ -3760,7 +3643,7 @@ window.invUtils = (function (apex, $) {
                         // Método 4: Verificar si el registro tiene estado de cambio
                         if (targetRow.hasChanges && targetRow.hasChanges()) {
                             isDirty = true;
-                            console.log(`✅ invUtils: Registro confirmado como changed usando hasChanges()`);
+                            apex.debug.info(`✅ invUtils: Registro confirmado como changed usando hasChanges()`);
                         }
                     } catch (e) {
                         console.warn(`invUtils: Error con hasChanges:`, e);
@@ -3773,7 +3656,7 @@ window.invUtils = (function (apex, $) {
                         try {
                             if (model.setDirty) {
                                 model.setDirty(targetRow, true);
-                                console.log(`🔄 invUtils: Dirty state forzado nuevamente usando setDirty()`);
+                                apex.debug.info(`🔄 invUtils: Dirty state forzado nuevamente usando setDirty()`);
                             }
                         } catch (e) {
                             console.warn(`invUtils: Error al forzar dirty state:`, e);
@@ -3782,13 +3665,13 @@ window.invUtils = (function (apex, $) {
                         try {
                             if (model.markDirty) {
                                 model.markDirty(targetRow);
-                                console.log(`🔄 invUtils: Dirty state forzado nuevamente usando markDirty()`);
+                                apex.debug.info(`🔄 invUtils: Dirty state forzado nuevamente usando markDirty()`);
                             }
                         } catch (e) {
                             console.warn(`invUtils: Error al forzar dirty state:`, e);
                         }
                     } else {
-                        console.log(`✅ invUtils: Estado dirty confirmado correctamente`);
+                        apex.debug.info(`✅ invUtils: Estado dirty confirmado correctamente`);
                     }
                 }, 100);
 
@@ -3842,7 +3725,7 @@ window.invUtils = (function (apex, $) {
     function asignarCeldaVerificada(gridStaticId, columnName, rowIndex, value, maxAttempts = 5, delayBetweenAttempts = 200) {
         return new Promise((resolve) => {
             try {
-                console.log(`🔄 invUtils: Iniciando seteo con estabilización - ${value} en ${columnName}, fila ${rowIndex}`);
+                apex.debug.info(`🔄 invUtils: Iniciando seteo con estabilización - ${value} en ${columnName}, fila ${rowIndex}`);
 
                 const grid = apex.region(gridStaticId).call("getViews").grid;
                 const model = grid.model;
@@ -3853,21 +3736,15 @@ window.invUtils = (function (apex, $) {
                 if (rowIndex === -1) {
                     const array = grid.getSelectedRecords();
                     if (array && array.length > 0) {
-                        targetRow = array[0][1];
+                        targetRow = array[0];
                     } else {
                         console.warn(`invUtils: No hay fila seleccionada en ${gridStaticId}`);
                         resolve(false);
                         return;
                     }
                 } else {
-                    const allRecords = [];
-                    model.forEach(function (record) {
-                        allRecords.push(record);
-                    });
-
-                    if (allRecords.length >= rowIndex && rowIndex > 0) {
-                        targetRow = allRecords[rowIndex - 1];
-                    } else {
+                    targetRow = leerRegistroPorIndice(model, rowIndex);
+                    if (!targetRow) {
                         console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                         resolve(false);
                         return;
@@ -3885,11 +3762,11 @@ window.invUtils = (function (apex, $) {
 
                 function intentarAsignacion() {
                     attempts++;
-                    console.log(`🔄 invUtils: Intento ${attempts}/${maxAttempts} - Estableciendo valor ${value}`);
+                    apex.debug.info(`🔄 invUtils: Intento ${attempts}/${maxAttempts} - Estableciendo valor ${value}`);
 
                     // Obtener valor actual
                     const currentValue = model.getValue(targetRow, columnName);
-                    console.log(`📊 invUtils: Valor actual: ${currentValue}, Valor objetivo: ${value}`);
+                    apex.debug.info(`📊 invUtils: Valor actual: ${currentValue}, Valor objetivo: ${value}`);
 
                     // Establecer el valor
                     model.setValue(targetRow, columnName, value);
@@ -3900,19 +3777,19 @@ window.invUtils = (function (apex, $) {
                     // Esperar un poco y verificar si el valor se mantuvo
                     setTimeout(() => {
                         const verifyValue = model.getValue(targetRow, columnName);
-                        console.log(`📊 invUtils: Valor después de seteo: ${verifyValue}`);
+                        apex.debug.info(`📊 invUtils: Valor después de seteo: ${verifyValue}`);
 
                         // Verificar si el valor se estabilizó
                         if (verifyValue === value || verifyValue === lastValue) {
-                            console.log(`✅ invUtils: Valor estabilizado en ${verifyValue}`);
+                            apex.debug.info(`✅ invUtils: Valor estabilizado en ${verifyValue}`);
 
                             // Confirmar cambios
                             confirmarCambios(gridStaticId, true, true);
 
                             // Refrescar vista
                             try {
-                                grid.view$.trigger('refresh');
-                                console.log(`✅ invUtils: Vista refrescada`);
+                                grid.view$.grid('refresh');
+                                apex.debug.info(`✅ invUtils: Vista refrescada`);
                             } catch (e) {
                                 console.warn(`invUtils: Error al refrescar vista:`, e);
                             }
@@ -3922,7 +3799,7 @@ window.invUtils = (function (apex, $) {
                             lastValue = verifyValue;
 
                             if (attempts < maxAttempts) {
-                                console.log(`🔄 invUtils: Valor no estabilizado, reintentando...`);
+                                apex.debug.info(`🔄 invUtils: Valor no estabilizado, reintentando...`);
                                 setTimeout(intentarAsignacion, delayBetweenAttempts);
                             } else {
                                 console.warn(`⚠️ invUtils: No se pudo estabilizar el valor después de ${maxAttempts} intentos`);
@@ -3946,7 +3823,7 @@ window.invUtils = (function (apex, $) {
                                     // Confirmar cambios
                                     confirmarCambios(gridStaticId, true, true);
 
-                                    console.log(`✅ invUtils: Último intento completado`);
+                                    apex.debug.info(`✅ invUtils: Último intento completado`);
                                     resolve(true);
                                 } catch (finalError) {
                                     console.error(`invUtils: Error en último intento:`, finalError);
@@ -4002,7 +3879,7 @@ window.invUtils = (function (apex, $) {
      */
     function simularInteraccionUsuario(gridStaticId, columnName, rowIndex = -1) {
         try {
-            console.log(`🎯 invUtils: Simulando interacción del usuario en ${gridStaticId}`);
+            apex.debug.info(`🎯 invUtils: Simulando interacción del usuario en ${gridStaticId}`);
 
             const grid = apex.region(gridStaticId).call("getViews").grid;
             const model = grid.model;
@@ -4013,20 +3890,14 @@ window.invUtils = (function (apex, $) {
             if (rowIndex === -1) {
                 const array = grid.getSelectedRecords();
                 if (array && array.length > 0) {
-                    targetRow = array[0][1];
+                    targetRow = array[0];
                 } else {
                     console.warn(`invUtils: No hay fila seleccionada en ${gridStaticId}`);
                     return false;
                 }
             } else {
-                const allRecords = [];
-                model.forEach(function (record) {
-                    allRecords.push(record);
-                });
-
-                if (allRecords.length >= rowIndex && rowIndex > 0) {
-                    targetRow = allRecords[rowIndex - 1];
-                } else {
+                targetRow = leerRegistroPorIndice(model, rowIndex);
+                if (!targetRow) {
                     console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                     return false;
                 }
@@ -4037,54 +3908,21 @@ window.invUtils = (function (apex, $) {
                 return false;
             }
 
-            // Método 1: Navegar a la celda
+            // Paso 1: Navegar a la celda. gotoCell recibe el ID del registro, selecciona la fila
+            // y enfoca la celda, por lo que no hace falta simular focus ni click.
             try {
-            grid.gotoCell(targetRow, columnName);
-                console.log(`✅ invUtils: Navegación a celda simulada`);
+                grid.view$.grid("gotoCell", model.getRecordId(targetRow), columnName);
+                apex.debug.info(`✅ invUtils: Navegación a celda simulada`);
             } catch (e) {
                 console.warn(`invUtils: Error en navegación:`, e);
             }
 
-            // Método 2: Simular focus en la celda
+            // Paso 2: Activar modo edición
             try {
-                const cellElement = grid.getCellElement ? grid.getCellElement(targetRow, columnName) : null;
-                if (cellElement && cellElement.length > 0) {
-                    cellElement.focus();
-                    console.log(`✅ invUtils: Focus en celda simulado`);
-                }
-            } catch (e) {
-                console.warn(`invUtils: Error en focus:`, e);
-            }
-
-            // Método 3: Simular click en la celda
-            try {
-                const cellElement = grid.getCellElement ? grid.getCellElement(targetRow, columnName) : null;
-                if (cellElement && cellElement.length > 0) {
-                    cellElement.trigger('click');
-                    console.log(`✅ invUtils: Click en celda simulado`);
-                }
-            } catch (e) {
-                console.warn(`invUtils: Error en click:`, e);
-            }
-
-            // Método 4: Activar modo edición
-            try {
-                if (grid.setEditMode) {
-                    grid.setEditMode(true);
-                    console.log(`✅ invUtils: Modo edición activado`);
-                }
+                grid.view$.grid("setEditMode", true);
+                apex.debug.info(`✅ invUtils: Modo edición activado`);
             } catch (e) {
                 console.warn(`invUtils: Error en modo edición:`, e);
-            }
-
-            // Método 5: Forzar activación del registro
-            try {
-                if (grid.setActiveRecord) {
-                    grid.setActiveRecord(targetRow);
-                    console.log(`✅ invUtils: Registro activado`);
-                }
-            } catch (e) {
-                console.warn(`invUtils: Error en activación de registro:`, e);
             }
 
             return true;
@@ -4106,7 +3944,7 @@ window.invUtils = (function (apex, $) {
      */
     function asignarCeldaActivada(gridStaticId, columnName, rowIndex, value, simulateInteraction = true) {
         try {
-            console.log(`🎯 invUtils: Seteando valor con activación - ${value} en ${columnName}, fila ${rowIndex}`);
+            apex.debug.info(`🎯 invUtils: Seteando valor con activación - ${value} en ${columnName}, fila ${rowIndex}`);
 
             // Simular interacción del usuario primero
             if (simulateInteraction) {
@@ -4120,7 +3958,7 @@ window.invUtils = (function (apex, $) {
                     // Confirmar cambios después de un delay adicional
                     setTimeout(() => {
                         confirmarCambios(gridStaticId, true, true);
-                        console.log(`✅ invUtils: Valor establecido con activación completado`);
+                        apex.debug.info(`✅ invUtils: Valor establecido con activación completado`);
                     }, 100);
                 }, 200);
             } else {
@@ -4174,7 +4012,7 @@ window.invUtils = (function (apex, $) {
     function asignarCeldaPausandoEventos(gridStaticId, columnName, rowIndex, value, refresh = true, maxRetries = 3) {
         return new Promise((resolve) => {
             try {
-                console.log(`🛡️ invUtils: Seteando valor robusto ${value} en ${columnName}, fila ${rowIndex}`);
+                apex.debug.info(`🛡️ invUtils: Seteando valor robusto ${value} en ${columnName}, fila ${rowIndex}`);
 
                 const grid = apex.region(gridStaticId).call("getViews").grid;
                 const model = grid.model;
@@ -4183,7 +4021,7 @@ window.invUtils = (function (apex, $) {
 
                 // Obtener registro objetivo
                 if (rowIndex === -1) {
-                    const selectedRecords = apex.region(gridStaticId).widget().interactiveGrid("getCurrentView").getSelectedRecords();
+                    const selectedRecords = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid").getSelectedRecords();
                     if (selectedRecords && selectedRecords.length > 0) {
                         targetRecord = selectedRecords[0];
                     } else {
@@ -4192,14 +4030,8 @@ window.invUtils = (function (apex, $) {
                         return;
                     }
                 } else {
-                    const allRecords = [];
-                    model.forEach(function (record) {
-                        allRecords.push(record);
-                    });
-
-                    if (allRecords.length >= rowIndex && rowIndex > 0) {
-                        targetRecord = allRecords[rowIndex - 1];
-                    } else {
+                    targetRecord = leerRegistroPorIndice(model, rowIndex);
+                    if (!targetRecord) {
                         console.warn(`invUtils: Fila ${rowIndex} fuera de rango en ${gridStaticId}`);
                         resolve(false);
                         return;
@@ -4217,49 +4049,25 @@ window.invUtils = (function (apex, $) {
 
                 function intentarAsignacion() {
                     attempts++;
-                    console.log(`🔄 invUtils: Intento ${attempts}/${maxRetries} - Estableciendo valor ${value}`);
+                    apex.debug.info(`🔄 invUtils: Intento ${attempts}/${maxRetries} - Estableciendo valor ${value}`);
 
                     try {
-                        // Paso 1: Deshabilitar temporalmente los listeners de APEX
-                        let originalListeners = null;
-                        try {
-                            if (model._listeners) {
-                                originalListeners = model._listeners;
-                                model._listeners = [];
-                                console.log(`✅ invUtils: Listeners deshabilitados temporalmente`);
-                            }
-                        } catch (e) {
-                            console.warn(`invUtils: No se pudieron deshabilitar listeners:`, e);
-                        }
+                        // Ya no se vacía model._listeners: es una propiedad interna de APEX y, mientras
+                        // estaba vacía, la vista no recibía la notificación del cambio.
 
-                        // Paso 2: Obtener valor actual
+                        // Paso 1: Obtener valor actual
                         const currentValue = model.getValue(targetRecord, columnName);
-                        console.log(`📊 invUtils: Valor actual: ${currentValue}, Valor objetivo: ${value}`);
+                        apex.debug.info(`📊 invUtils: Valor actual: ${currentValue}, Valor objetivo: ${value}`);
 
-                        // Paso 3: Establecer el valor usando múltiples métodos
-                        let setValueSuccess = false;
-
-                        // Método 1: setValue directo
+                        // Paso 2: Establecer el valor (setValue documentado recibe solo registro, campo y valor)
                         try {
                             model.setValue(targetRecord, columnName, value);
-                            setValueSuccess = true;
-                            console.log(`✅ invUtils: Valor establecido usando setValue directo`);
+                            apex.debug.info(`✅ invUtils: Valor establecido usando setValue directo`);
                         } catch (e) {
                             console.warn(`invUtils: Error con setValue directo:`, e);
                         }
 
-                        // Método 2: setValue con opciones si el método 1 falló
-                        if (!setValueSuccess) {
-                            try {
-                                model.setValue(targetRecord, columnName, value, { silent: true, dirty: true });
-                                setValueSuccess = true;
-                                console.log(`✅ invUtils: Valor establecido usando setValue con opciones`);
-                            } catch (e) {
-                                console.warn(`invUtils: Error con setValue con opciones:`, e);
-                            }
-                        }
-
-                        // Paso 4: Forzar estado dirty de manera agresiva
+                        // Paso 3: Forzar estado dirty de manera agresiva
                         try {
                             // Método 1: markDirty
                             if (model.markDirty) {
@@ -4277,22 +4085,12 @@ window.invUtils = (function (apex, $) {
                                 model.setValue(targetRecord, columnName, value);
                             }
 
-                            console.log(`✅ invUtils: Estado dirty forzado`);
+                            apex.debug.info(`✅ invUtils: Estado dirty forzado`);
                         } catch (e) {
                             console.warn(`invUtils: Error al forzar dirty state:`, e);
                         }
 
-                        // Paso 5: Restaurar listeners
-                        try {
-                            if (originalListeners) {
-                                model._listeners = originalListeners;
-                                console.log(`✅ invUtils: Listeners restaurados`);
-                            }
-                        } catch (e) {
-                            console.warn(`invUtils: Error al restaurar listeners:`, e);
-                        }
-
-                        // Paso 6: Commit inmediato
+                        // Paso 4: Commit inmediato
                         try {
                             if (model.commitRecord) {
                                 model.commitRecord(targetRecord);
@@ -4300,27 +4098,25 @@ window.invUtils = (function (apex, $) {
                             if (model.commit) {
                                 model.commit();
                             }
-                            console.log(`✅ invUtils: Commit ejecutado`);
+                            apex.debug.info(`✅ invUtils: Commit ejecutado`);
                         } catch (e) {
                             console.warn(`invUtils: Error en commit:`, e);
                         }
 
-                        // Paso 7: Verificar si el valor se mantuvo
+                        // Paso 5: Verificar si el valor se mantuvo
                         setTimeout(() => {
                             const verifyValue = model.getValue(targetRecord, columnName);
-                            console.log(`📊 invUtils: Valor después de seteo: ${verifyValue}`);
+                            apex.debug.info(`📊 invUtils: Valor después de seteo: ${verifyValue}`);
 
                             // Verificar si el valor se estabilizó
                             if (verifyValue === value || verifyValue === lastValue) {
-                                console.log(`✅ invUtils: Valor estabilizado en ${verifyValue}`);
+                                apex.debug.info(`✅ invUtils: Valor estabilizado en ${verifyValue}`);
 
                                 // Refrescar vista si está habilitado
                                 if (refresh) {
                                     try {
-                                        if (grid.view$ && grid.view$.trigger) {
-                                            grid.view$.trigger('refresh');
-                                            console.log(`✅ invUtils: Vista refrescada`);
-                                        }
+                                        grid.view$.grid('refresh');
+                                        apex.debug.info(`✅ invUtils: Vista refrescada`);
                                     } catch (e) {
                                         console.warn(`invUtils: Error al refrescar vista:`, e);
                                     }
@@ -4416,13 +4212,7 @@ window.invUtils = (function (apex, $) {
                     if (selectedRecords && selectedRecords.length > 0) {
                         var record = selectedRecords[0];
                         var value = model.getValue(record, columnName);
-                        if (typeof $s === 'function') {
-                            $s(itemName, value);
-                        } else if (window.apex && apex.item && typeof apex.item(itemName).setValue === 'function') {
-                            apex.item(itemName).setValue(value);
-                        } else {
-                            console.warn('invUtils: No se pudo setear el valor en el item de página:', itemName);
-                        }
+                        apex.item(itemName).setValue(value);
                     }
                 } catch (e) {
                     console.error('invUtils: Error en sincronizarItemSeleccion (handler):', e);
@@ -4456,7 +4246,7 @@ window.invUtils = (function (apex, $) {
 
             // Limpia listeners previos
             $ig.off('interactivegridselectionchange.' + listenerId);
-            model.unsubscribe && model.unsubscribe(listenerId);
+            try { model.unSubscribe(listenerId); } catch (e) { /* no había suscripción previa */ }
 
             // Listener de selección de fila
             $ig.on('interactivegridselectionchange.' + listenerId, function (event, ui) {
@@ -4465,11 +4255,7 @@ window.invUtils = (function (apex, $) {
                     if (selectedRecords && selectedRecords.length > 0) {
                         var record = selectedRecords[0];
                         var value = model.getValue(record, columnName);
-                        if (typeof $s === 'function') {
-                            $s(itemName, value);
-                        } else if (window.apex && apex.item && typeof apex.item(itemName).setValue === 'function') {
-                            apex.item(itemName).setValue(value);
-                        }
+                        apex.item(itemName).setValue(value);
                     }
                 } catch (e) {
                     console.error('invUtils: Error en sincronizarItemCambios (selection handler):', e);
@@ -4478,16 +4264,12 @@ window.invUtils = (function (apex, $) {
 
             // Listener de cambio de celda
             model.subscribe({
-                id: listenerId,
+                viewId: listenerId,
                 onChange: function (type, change) {
                     if (type === 'set' && change.field === columnName) {
                         // Obtener el registro afectado
                         var value = model.getValue(change.record, columnName);
-                        if (typeof $s === 'function') {
-                            $s(itemName, value);
-                        } else if (window.apex && apex.item && typeof apex.item(itemName).setValue === 'function') {
-                            apex.item(itemName).setValue(value);
-                        }
+                        apex.item(itemName).setValue(value);
                     }
                 }
             });
@@ -4527,7 +4309,7 @@ window.invUtils = (function (apex, $) {
             var record = selectedRecords[0];
             model.setValue(record, columnName, value);
 
-            console.log('invUtils: Valor asignado correctamente:', {
+            apex.debug.info('invUtils: Valor asignado correctamente:', {
                 grid: gridStaticId,
                 column: columnName,
                 value: value
@@ -4557,17 +4339,30 @@ window.invUtils = (function (apex, $) {
 
             var model = grid.model;
             var subId = 'selectFirstRowOnInit_' + gridStaticId;
-            try { model.unsubscribe && model.unsubscribe(subId); } catch (e) { }
+            try { model.unSubscribe(subId); } catch (e) { /* no había suscripción previa */ }
+
+            // Primer registro cargado que no esté marcado para borrar ni sea una fila de agregados.
+            // model.getRecords() no existe en la API documentada; se recorre con recordAt.
+            function leerPrimerRegistroValido() {
+                for (var i = 0; ; i++) {
+                    var record = model.recordAt(i);
+                    if (!record) {
+                        return null;
+                    }
+                    if (!esRegistroEliminado(record, model)) {
+                        return record;
+                    }
+                }
+            }
 
             // Función para seleccionar la primera fila
             function seleccionarPrimeraFila() {
                 try {
-                    var records = model.getRecords();
-                    if (records && records.length > 0) {
-                        var firstRecord = records[0];
+                    var firstRecord = leerPrimerRegistroValido();
+                    if (firstRecord) {
                         grid.setSelectedRecords([firstRecord]);
 
-                        console.log('invUtils: Primera fila seleccionada automáticamente en:', gridStaticId);
+                        apex.debug.info('invUtils: Primera fila seleccionada automáticamente en:', gridStaticId);
 
                         // Ejecutar callback si se proporciona
                         if (typeof callback === 'function') {
@@ -4586,17 +4381,17 @@ window.invUtils = (function (apex, $) {
             }
 
             // Verificar si ya hay datos cargados
-            var records = model.getRecords();
-            if (records && records.length > 0) {
+            if (leerPrimerRegistroValido()) {
                 // Si ya hay datos, seleccionar inmediatamente
                 seleccionarPrimeraFila();
             } else {
-                // Si no hay datos, esperar a que se carguen
+                // Si no hay datos, esperar a que se carguen. El modelo notifica la carga
+                // como 'addData' (no existe un tipo 'add'); se escucha una sola vez.
                 model.subscribe({
-                    id: subId,
-                    onChange: function (type, change) {
-                        if (type === 'add' && model.getRecords().length === 1) {
-                            // Primera vez que se agrega un registro
+                    viewId: subId,
+                    onChange: function (type) {
+                        if (type === 'addData' && leerPrimerRegistroValido()) {
+                            try { model.unSubscribe(subId); } catch (e) { /* noop */ }
                             setTimeout(seleccionarPrimeraFila, 100); // Pequeño delay para asegurar que la vista esté lista
                         }
                     }
@@ -4641,16 +4436,15 @@ window.invUtils = (function (apex, $) {
             }
 
             // Limpiar bindings previos si existen
-            if (!model._apxGridSyncs) { model._apxGridSyncs = {}; }
-            if (model._apxGridSyncs[syncId] && typeof model._apxGridSyncs[syncId].cleanup === 'function') {
-                try { model._apxGridSyncs[syncId].cleanup(); } catch (e) { /* noop */ }
+            if (sincronizacionesGrid.has(syncId)) {
+                try { sincronizacionesGrid.get(syncId).cleanup(); } catch (e) { /* noop */ }
             }
 
             // Limpiar listeners previos
             if ($ig && $ig.off) {
                 $ig.off('interactivegridselectionchange.' + syncId);
             }
-            model.unsubscribe && model.unsubscribe(syncId + '_cell');
+            try { model.unSubscribe(syncId + '_cell'); } catch (e) { /* no había suscripción previa */ }
 
             // Función para actualizar el item con el valor de la columna
             var asignarItem = function (record) {
@@ -4662,15 +4456,11 @@ window.invUtils = (function (apex, $) {
                         : raw;
 
                     // Actualizar el item
-                    if (window.apex && apex.item && typeof apex.item(itemName).setValue === 'function') {
-                        try {
-                            // Tercer parámetro true intenta suprimir change events (evita eco hacia Item→Grid)
-                            apex.item(itemName).setValue(value, null, true);
-                        } catch (e) {
-                            apex.item(itemName).setValue(value);
-                        }
-                    } else if (typeof $s === 'function') {
-                        $s(itemName, value);
+                    try {
+                        // Tercer parámetro true intenta suprimir change events (evita eco hacia Item→Grid)
+                        apex.item(itemName).setValue(value, null, true);
+                    } catch (e) {
+                        apex.item(itemName).setValue(value);
                     }
 
                     if (options.debug) {
@@ -4720,7 +4510,7 @@ window.invUtils = (function (apex, $) {
 
             // Listener de cambio de celda (solo si la fila está seleccionada)
             model.subscribe({
-                id: syncId + '_cell',
+                viewId: syncId + '_cell',
                 onChange: function (type, change) {
                     if (type === 'set' && change.field === columnName) {
                         try {
@@ -4763,14 +4553,14 @@ window.invUtils = (function (apex, $) {
             }, 100);
 
             // Guardar cleanup
-            model._apxGridSyncs[syncId] = {
+            sincronizacionesGrid.set(syncId, {
                 cleanup: function () {
-                    try { model.unsubscribe && model.unsubscribe(syncId + '_cell'); } catch (e) { }
+                    try { model.unSubscribe(syncId + '_cell'); } catch (e) { }
                     try { if ($ig && $ig.off) { $ig.off('interactivegridselectionchange.' + syncId); } } catch (e) { }
                 }
-            };
+            });
 
-            console.log('invUtils: Sincronización Grid → Item configurada con múltiples listeners:', {
+            apex.debug.info('invUtils: Sincronización Grid → Item configurada con múltiples listeners:', {
                 grid: gridStaticId,
                 column: columnName,
                 item: itemName
@@ -4819,9 +4609,8 @@ window.invUtils = (function (apex, $) {
             // Limpiar bindings previos
             try { $item.off('change.' + syncId); } catch (e) { }
 
-            if (!model._apxGridSyncs) { model._apxGridSyncs = {}; }
-            if (model._apxGridSyncs[syncId] && typeof model._apxGridSyncs[syncId].cleanup === 'function') {
-                try { model._apxGridSyncs[syncId].cleanup(); } catch (e) { }
+            if (sincronizacionesGrid.has(syncId)) {
+                try { sincronizacionesGrid.get(syncId).cleanup(); } catch (e) { }
             }
 
             var isSyncing = false; // evitar bucles accidentales
@@ -4901,13 +4690,13 @@ window.invUtils = (function (apex, $) {
             }
 
             // Guardar cleanup
-            model._apxGridSyncs[syncId] = {
+            sincronizacionesGrid.set(syncId, {
                 cleanup: function () {
                     try { $item.off('change.' + syncId); } catch (e) { }
                 }
-            };
+            });
 
-            console.log('invUtils: Sincronización Item → Grid configurada:', {
+            apex.debug.info('invUtils: Sincronización Item → Grid configurada:', {
                 grid: gridStaticId,
                 column: columnName,
                 item: itemName
@@ -4952,11 +4741,7 @@ window.invUtils = (function (apex, $) {
                             if (selectedRecords && selectedRecords.length > 0) {
                                 var raw = model.getValue(selectedRecords[0], columnName);
                                 var value = (raw && typeof raw === 'object' && (raw.v !== undefined || raw.d !== undefined)) ? raw.v : raw;
-                                if (window.apex && apex.item && typeof apex.item(itemName).setValue === 'function') {
-                                    try { apex.item(itemName).setValue(value, null, true); } catch (e) { apex.item(itemName).setValue(value); }
-                                } else if (typeof $s === 'function') {
-                                    $s(itemName, value);
-                                }
+                                try { apex.item(itemName).setValue(value, null, true); } catch (e) { apex.item(itemName).setValue(value); }
                                 if (debug) { console.log('invUtils: Push inicial Grid → Item aplicado'); }
                             }
                         }
@@ -5083,10 +4868,15 @@ window.invUtils = (function (apex, $) {
                 }
             });
 
-            // Monitorear eventos de la vista
-            const viewSubscription = grid.view$.on('change', function (event, data) {
+            // Monitorear eventos documentados del widget grid. El namespace permite
+            // quitar solo estos handlers sin afectar los de APEX u otros scripts.
+            const viewEventNamespace = '.invUtilsDebug_' + gridStaticId;
+            const viewEvents = ['gridselectionchange', 'gridcurrentcellchange', 'gridmodechange']
+                .map(name => name + viewEventNamespace)
+                .join(' ');
+            grid.view$.on(viewEvents, function (event) {
                 try {
-                    console.log(`👁️ invUtils DEBUG: Vista cambió - Evento: ${event}`, data);
+                    console.log(`👁️ invUtils DEBUG: Vista cambió - Evento: ${event.type}`);
                 } catch (error) {
                     registrarError(error, 'view_subscription');
                 }
@@ -5154,7 +4944,7 @@ window.invUtils = (function (apex, $) {
 
                     const array = grid.getSelectedRecords();
                     if (array && array.length > 0) {
-                        const targetRow = array[0][1];
+                        const targetRow = array[0];
                         const currentValue = leerValorActual(targetRow, columnName || 'COSTO');
                         const newValue = parseFloat(currentValue || 0) + 0.01;
 
@@ -5186,13 +4976,12 @@ window.invUtils = (function (apex, $) {
                 try {
                     console.log(`🛑 invUtils DEBUG: Deteniendo debug para ${gridStaticId}`);
 
-                    if (modelSubscription && modelSubscription.unsubscribe) {
-                        modelSubscription.unsubscribe();
+                    // subscribe devuelve el viewId (string); se libera con model.unSubscribe.
+                    if (modelSubscription) {
+                        model.unSubscribe(modelSubscription);
                     }
 
-                    if (viewSubscription && viewSubscription.off) {
-                        viewSubscription.off('change');
-                    }
+                    grid.view$.off(viewEventNamespace);
 
                     console.log(`📊 invUtils DEBUG RESUMEN:`);
                     console.log(`   - Cambios registrados: ${debugInfo.changes.length}`);
@@ -5342,16 +5131,59 @@ window.invUtils = (function (apex, $) {
                     return true;
                 }
             }
-            // Fallback por si la metadata no está disponible o es un registro nuevo sin ID.
-            // La propiedad 't' con el valor 'd' también es un indicador interno de APEX.
-            if (record._meta && record._meta.t === 'd') {
-                return true;
-            }
+            // No se consulta record._meta: es un detalle interno de APEX, no una API documentada.
 
         } catch (e) {
             console.warn('invUtils: No se pudo verificar el estado del registro.', e);
         }
         return false;
+    }
+
+    /**
+     * Devuelve el registro ubicado en rowIndex (1 = primera fila), contando solo los registros
+     * vigentes: omite las filas marcadas para borrar y las filas de agregados (totales).
+     * @param {object} model - Modelo del Interactive Grid.
+     * @param {number} rowIndex - Posición de la fila, empezando en 1.
+     * @returns {object|null} Registro encontrado o null si está fuera de rango.
+     */
+    function leerRegistroPorIndice(model, rowIndex) {
+        if (!(rowIndex > 0)) {
+            return null;
+        }
+        let posicion = 0;
+        for (let i = 0; ; i++) {
+            const record = model.recordAt(i);
+            if (!record) {
+                return null;
+            }
+            if (!esRegistroEliminado(record, model) && ++posicion === rowIndex) {
+                return record;
+            }
+        }
+    }
+
+    // Nombres históricos de la API pública que no son tipos de notificación del modelo.
+    // El modelo emite, entre otros: set, insert, copy, delete, addData, refresh, refreshRecords, revert.
+    const TIPOS_CAMBIO_EQUIVALENTES = {
+        add: ['insert', 'copy', 'addData'],
+        reset: ['refresh', 'refreshRecords', 'revert']
+    };
+
+    /**
+     * Traduce los tipos de cambio históricos ('add', 'reset') a los tipos que emite el modelo.
+     * @param {string[]} tipos - Tipos recibidos por la API pública.
+     * @returns {string[]} Tipos de notificación reales, sin duplicados.
+     */
+    function normalizarTiposCambio(tipos) {
+        const resultado = [];
+        tipos.forEach(tipo => {
+            (TIPOS_CAMBIO_EQUIVALENTES[tipo] || [tipo]).forEach(t => {
+                if (!resultado.includes(t)) {
+                    resultado.push(t);
+                }
+            });
+        });
+        return resultado;
     }
 
     /**
@@ -5362,6 +5194,19 @@ window.invUtils = (function (apex, $) {
      */
     function generarIdConfiguracion(gridStaticId, targetColumn) {
         return `${gridStaticId}_${targetColumn}`;
+    }
+
+    /**
+     * Quita la suscripción al modelo creada por configurarEventosCalculo para una configuración.
+     * @param {string} gridStaticId - Static ID del Interactive Grid
+     * @param {string} configId - ID de la configuración
+     */
+    function liberarSuscripcionCalculo(gridStaticId, configId) {
+        try {
+            apex.region(gridStaticId).call("getViews").grid.model.unSubscribe('invUtils_calc_' + configId);
+        } catch (e) {
+            // La región ya no existe o no había suscripción
+        }
     }
 
     /**
@@ -5417,13 +5262,18 @@ window.invUtils = (function (apex, $) {
     /**
      * Configurar eventos para disparar cálculos automáticamente
      */
-    function configurarEventosCalculo(gridStaticId, sourceColumns, callback) {
+    function configurarEventosCalculo(gridStaticId, sourceColumns, callback, configId) {
         try {
             const ig$ = apex.region(gridStaticId).widget().interactiveGrid("getViews", "grid");
             const model = ig$.model;
+            const viewId = 'invUtils_calc_' + configId;
+
+            // Reemplazar la suscripción anterior de esta configuración, si existía
+            try { model.unSubscribe(viewId); } catch (e) { /* no había suscripción previa */ }
 
             // Configurar listener para cambios en el modelo
             model.subscribe({
+                viewId: viewId,
                 onChange: function (type, change) {
                     if (type === 'set' && sourceColumns.includes(change.field)) {
                         setTimeout(callback, 50);
@@ -5466,7 +5316,7 @@ window.invUtils = (function (apex, $) {
             // Método 2: Intentar obtener registro activo
             if (!record) {
                 try {
-                    const activeRecordId = ig$.getActiveRecordId ? ig$.getActiveRecordId() : null;
+                    const activeRecordId = ig$.view$.grid("getActiveRecordId");
                     if (activeRecordId) {
                         record = model.getRecord(activeRecordId);
                     }

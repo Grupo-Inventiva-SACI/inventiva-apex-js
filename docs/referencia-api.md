@@ -9,7 +9,7 @@
 | `regionId`, `gridStaticId` | Static ID de la región Interactive Grid. |
 | `itemName`, `targetItem`, `campoDestino` | Nombre del ítem de página correspondiente. |
 | `columnName`, `targetColumn` | Nombre de la columna, no su encabezado ni el Static ID del editor. |
-| `rowIndex` | En los accesos por índice, `1` indica la primera fila y `-1` la selección; se usan registros cargados en el modelo. |
+| `rowIndex` | En los accesos por índice, `1` indica la primera fila y `-1` la selección. Se cuentan los registros cargados en el modelo, sin las filas marcadas para borrar ni las filas de agregados (totales). |
 | `value` | Valor que se asignará; revisar la variante numérica o de formato elegida. |
 | `decimalPlaces` | Cantidad de decimales. El valor por defecto y el significado de `null` dependen de la firma. |
 | `refresh`, `refreshRegion` | Opciones de refresco de la vista o región; ver los efectos de cada función. |
@@ -29,6 +29,8 @@ Los ejemplos de configuración están en el [manual](manual.md#ejemplos-de-uso).
 | `invUtils.grid.extraerDatos`, `extraerCampos` | Objeto con `success`, `data` y `count` en éxito; incluye `error` cuando falla. También asigna el resultado al ítem destino. |
 | `invUtils.grid.asignarCeldaVerificada`, `asignarCeldaPausandoEventos` y sus variantes | `Promise<boolean>`; realizan verificaciones y reintentos. |
 | `invUtils.grid.recalcularFilas` | No devuelve una promesa; programa el trabajo mediante un temporizador. |
+| `invUtils.grid.escucharCambios` | `viewId` de la suscripción (texto) o `false` ante error. Cada llamada agrega un listener; para quitarlo, usar `model.unSubscribe(viewId)`. |
+| `invUtils.grid.habilitarEdicion`, `cargarDatos` y variantes con `modoEdicion` | Activan la edición en el navegador. Solo permiten guardar si la región ya está declarada como editable en APEX, con su proceso de DML. |
 | `invUtils.grid.sumarColumna`, `sumarTotal` | Objeto con la suma inicial y un método para recalcular; véase el detalle al final del catálogo. |
 | `invUtils.grid.depurarCambios` | Objeto de control de depuración o `null`; véase el detalle al final del catálogo. |
 
@@ -50,7 +52,7 @@ Estos nombres describen mecanismos; no garantizan que Oracle APEX acepte todos l
 | `asignarCeldaMarcada` y sus variantes | Asignan el valor e intentan marcar los cambios según `forceDirty`. |
 | `asignarCeldaVerificada` y sus variantes | Verifican el valor y realizan reintentos; devuelven una promesa y conservan las condiciones originales de éxito. |
 | `asignarCeldaActivada` y sus variantes | Pueden simular la interacción con la celda antes de asignar el valor. |
-| `asignarCeldaPausandoEventos` y sus variantes | Intentan suspender temporalmente los listeners internos del modelo, restaurarlos y verificar el valor con reintentos. No suspenden todos los eventos de la página. |
+| `asignarCeldaPausandoEventos` y sus variantes | Asignan el valor y lo verifican con reintentos. Ya no suspenden los listeners internos del modelo (`_listeners`), porque esa propiedad no es una API documentada; el nombre se conserva por compatibilidad. |
 
 ## Catálogo de funciones
 
