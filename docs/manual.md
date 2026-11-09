@@ -24,7 +24,7 @@ Referencias oficiales: [JavaScript en APEX 24.1](https://docs.oracle.com/en/data
 
 | Acceso | Responsabilidad | Ejemplo |
 |---|---|---|
-| `invUtils` | Alertas, números y control de ejecuciones | `invUtils.mostrarAlerta(200, "Proceso completado")` |
+| `invUtils` | Alertas, indicador de espera, números y control de ejecuciones | `invUtils.mostrarAlerta(200, "Proceso completado")` |
 | `invUtils.item` | Lectura numérica de ítems de página | `invUtils.item.leerNumero("P10_TOTAL")` |
 | `invUtils.grid` | Interactive Grids, cálculos, navegación y sincronización con ítems | `invUtils.grid.leerCelda("Prima", "MONTO_TOTAL", 1)` |
 
@@ -59,6 +59,43 @@ invUtils.posponerEjecucion("recalcular_total", function () {
 `item.leerValorNumerico` es un nombre alternativo de `item.leerNumero`; también devuelve un número. No es un lector genérico de texto. `leerNumero` conserva la interpretación europea: elimina puntos de miles y usa la coma decimal. No debe usarse para un ítem cuyo texto utiliza el punto como separador decimal. `normalizarNumero` conserva sus heurísticas originales y no sustituye una conversión explícita según NLS.
 
 En JavaScript, un número se escribe `1234.56`. El valor con formato europeo se escribe como texto: `"1.234,56"`. Escribir `1.234,56` sin comillas en una llamada pasa dos argumentos distintos.
+
+### Indicador de espera (spinner)
+
+La forma recomendada es `ejecutarConSpinner`: muestra el indicador, espera el proceso y lo oculta al terminar, incluso si falla.
+
+```javascript
+const respuesta = await invUtils.ejecutarConSpinner(() =>
+    apex.server.process("GUARDAR_DATOS", {
+        x01: apex.item("P10_ID").getValue()
+    })
+);
+```
+
+Si el proceso no cabe en una sola función, usar `mostrarSpinner` y `ocultarSpinner` con `try`/`finally`, para que el indicador se cierre también ante un error:
+
+```javascript
+invUtils.mostrarSpinner();
+try {
+    await apex.server.process("PROCESO_1", { x01: "A" });
+    await apex.server.process("PROCESO_2", { x01: "B" });
+} finally {
+    invUtils.ocultarSpinner();
+}
+```
+
+Las llamadas pueden anidarse: si una función muestra el indicador y llama a otra que también lo hace, el indicador se cierra con el último `ocultarSpinner`. Si un error dejó el contador desbalanceado y el indicador no se cierra, `invUtils.ocultarSpinner(true)` lo cierra de inmediato.
+
+El indicador solo se dibuja durante procesos asíncronos, como `apex.server.process`, promesas o temporizadores. Con código síncrono pesado, por ejemplo un bucle largo sobre una grilla, el navegador no lo muestra hasta que el código termina. En ese caso, ceder el control antes de empezar:
+
+```javascript
+await invUtils.ejecutarConSpinner(async () => {
+    await new Promise(resolver => setTimeout(resolver, 0)); // permite dibujar el indicador
+    // ... proceso síncrono pesado ...
+});
+```
+
+Los ejemplos usan `await`. Si el código de una Dynamic Action de tipo **Execute JavaScript Code** no lo admite en el nivel superior, envolverlo en una función asíncrona: `(async () => { /* ejemplo */ })();`, o usar `.then()` sobre la promesa que devuelve `ejecutarConSpinner`.
 
 ### Lectura y asignación en una grilla
 
@@ -133,6 +170,31 @@ if (resultado.success) {
 // Cargar datos directamente (revisar las opciones de limpieza y refresco):
 // invUtils.grid.cargarDatosDirectos("Prima", [{ CANTIDAD: 2, COSTO: "10,00" }]);
 ```
+
+#### Reemplazar las filas generadas sin una acción Refresh (APEX 26.2)
+
+En APEX 26.2 la acción dinámica **Refresh** es asíncrona: si después se ejecuta `insertNewRecord()`, la grilla todavía se está recargando y la inserción falla. Para regenerar filas desde un JSON (por ejemplo, cuotas), descartar los cambios en el navegador e insertar, sin Refresh ni `clearChanges()`:
+
+```javascript
+// 1. Acción que reemplaza clearChanges() + Refresh: sale del modo edición y descarta las filas sin guardar.
+invUtils.grid.descartarCambios("Cuotas");
+
+// 2. Acción que inserta: el modo edición se activa al final.
+const json = JSON.parse(apex.item("P703_JSON_CUOTA").getValue());
+const resultado = invUtils.grid.cargarDatos({
+    regionId: "Cuotas",
+    datos: json.DETALLE,
+    limpiarAntes: false,   // no usar clearData()
+    refrescar: false,
+    modoEdicion: true,
+    mapeo: { NUM_CUOTA: "NRO_CUOTA", TOT_CUOTA: "TOT_CUOTA" }
+});
+if (!resultado.success) {
+    apex.message.showErrors([{ type: "error", location: "page", message: resultado.error, unsafe: false }]);
+}
+```
+
+Los dos pasos también pueden ir en una sola acción con `descartarAntes: true`. `descartarCambios` no vuelve a leer de la base las filas guardadas: conserva las que ya muestra la grilla, sin sus cambios pendientes.
 
 `extraerDatos(configuracion)` corresponde a la antigua `extraerDatosIG`; `extraerCampos(regionId, campos, campoDestino)` corresponde a la antigua función abreviada `extraerDatos`.
 

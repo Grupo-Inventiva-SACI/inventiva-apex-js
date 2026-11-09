@@ -26,6 +26,8 @@ window.invUtils = (function (apex, $) {
     const ultimosValores = Object.create(null);
     let lastFocusedCell = null;
     let focusRestorationEnabled = true;
+    let spinnerPopup = null;      // Indicador de espera abierto por mostrarSpinner
+    let spinnerContador = 0;      // Llamadas a mostrarSpinner pendientes de cerrar
 
     // =============================================================================
     // GENERAL — utilidades compartidas
@@ -177,6 +179,52 @@ window.invUtils = (function (apex, $) {
             apex.debug.info('invUtils: Todos los debounces limpiados');
         } catch (error) {
             console.error('cancelarEjecucionesPendientes error:', error);
+        }
+    }
+
+    /**
+     * Muestra el indicador de espera de APEX (apex.widget.waitPopup), que bloquea la página.
+     * Admite llamadas anidadas: el indicador se cierra cuando ocultarSpinner se llama
+     * la misma cantidad de veces. Solo se ve durante procesos asíncronos (por ejemplo
+     * apex.server.process); el código síncrono no deja al navegador dibujarlo.
+     * -.RP-ClaudeAssist 09/11/2026
+     */
+    function mostrarSpinner() {
+        if (spinnerContador++ === 0) {
+            spinnerPopup = apex.widget.waitPopup();
+        }
+    }
+
+    /**
+     * Oculta el indicador de espera abierto con mostrarSpinner.
+     * @param {boolean} forzar - true lo cierra aunque queden llamadas pendientes; sirve para
+     *   recuperarse cuando un error impidió llamar a ocultarSpinner (default: false).
+     * -.RP-ClaudeAssist 09/11/2026
+     */
+    function ocultarSpinner(forzar = false) {
+        if (spinnerContador === 0) {
+            return;
+        }
+        spinnerContador = forzar ? 0 : spinnerContador - 1;
+        if (spinnerContador === 0 && spinnerPopup) {
+            spinnerPopup.remove();
+            spinnerPopup = null;
+        }
+    }
+
+    /**
+     * Ejecuta un proceso con el indicador de espera visible y lo oculta al terminar,
+     * también si el proceso falla.
+     * @param {function} proceso - Función síncrona o que devuelve una promesa.
+     * @returns {Promise<*>} Promesa con el resultado del proceso; se rechaza si el proceso falla.
+     * -.RP-ClaudeAssist 09/11/2026
+     */
+    async function ejecutarConSpinner(proceso) {
+        mostrarSpinner();
+        try {
+            return await proceso();
+        } finally {
+            ocultarSpinner();
         }
     }
 
@@ -374,6 +422,91 @@ window.invUtils = (function (apex, $) {
     }
 
     /**
+     * Sale del modo edición de la vista de una grilla. No cambia la opción "editable" del modelo,
+     * así que la grilla sigue permitiendo agregar filas (allowAdd).
+     * Llamarla antes de quitar filas del modelo: en APEX 26.2, si la celda activa queda en una fila
+     * eliminada, setEditMode(true) intenta reactivarla y falla (getRecordId de un registro null).
+     * -.RP-ClaudeAssist 31/10/2026
+     * @param {string} regionId - Static ID de la región Interactive Grid.
+     * @returns {boolean} Indica si se pudo salir del modo edición.
+     */
+    function deshabilitarEdicion(regionId) {
+        try {
+            var region = apex.region(regionId);
+            if (!region) {
+                console.error("Región no encontrada: " + regionId);
+                return false;
+            }
+
+            var grid = region.call("getViews").grid;
+            if (!grid) {
+                console.error("Grid no encontrado en la región: " + regionId);
+                return false;
+            }
+
+            grid.view$.grid("setEditMode", false);
+            return true;
+        } catch (error) {
+            console.error("Error al deshabilitar edición:", error);
+            return false;
+        }
+    }
+
+    /**
+     * Descarta en el navegador los cambios sin guardar de una grilla, sin consultar al servidor:
+     * sale del modo edición, quita del modelo las filas insertadas y revierte las modificadas
+     * o marcadas para borrar. Reemplaza el patrón model.clearChanges() + acción Refresh, que en
+     * APEX 26.2 es asíncrono y hacía fallar insertNewRecord() mientras la grilla se recargaba.
+     * No vuelve a leer de la base las filas guardadas. -.RP-ClaudeAssist 31/10/2026
+     * @param {string} regionId - Static ID de la región Interactive Grid.
+     * @returns {object} Resultado con success, eliminadas y revertidas, o error.
+     */
+    function descartarCambios(regionId) {
+        try {
+            var region = apex.region(regionId);
+            if (!region) {
+                throw new Error("Región no encontrada: " + regionId);
+            }
+
+            var grid = region.call("getViews").grid;
+            if (!grid) {
+                throw new Error("Grid no encontrado en la región: " + regionId);
+            }
+            var model = grid.model;
+
+            grid.view$.grid("setEditMode", false);
+
+            var insertadas = [];
+            var cambiadas = [];
+            model.forEach(function (registro, indice, id) {
+                var meta = model.getRecordMetadata(id);
+                if (!meta) {
+                    return;
+                }
+                if (meta.inserted) {
+                    insertadas.push(registro);
+                } else if (meta.updated || meta.deleted) {
+                    cambiadas.push(registro);
+                }
+            });
+
+            // Eliminar una fila insertada y sin guardar la quita del modelo
+            if (insertadas.length) {
+                model.deleteRecords(insertadas);
+            }
+            if (cambiadas.length) {
+                model.revertRecords(cambiadas);
+            }
+
+            apex.debug.info('invUtils: Cambios descartados en', regionId, '- eliminadas:', insertadas.length, 'revertidas:', cambiadas.length);
+            return { success: true, eliminadas: insertadas.length, revertidas: cambiadas.length };
+        } catch (error) {
+            console.error("Error al descartar cambios:", error);
+            return { success: false, error: error.message, eliminadas: 0, revertidas: 0 };
+        }
+    }
+
+    /**
      * Extrae campos de los registros cargados y los asigna a un ítem de página.
      * @param {object} configuracion - regionId, campos, campoDestino y opciones.
      * @returns {object} Resultado con success, data, count o error.
@@ -514,9 +647,13 @@ window.invUtils = (function (apex, $) {
      * @param {object} configuracion.mapeo - Mapeo personalizado de campos {campoDestino: campoOrigen}
      * @param {function} configuracion.transformacion - Función para transformar cada registro antes de insertar
      * @param {function} configuracion.filtro - Función para filtrar registros antes de insertar
-     * @param {boolean} configuracion.limpiarAntes - Si debe limpiar datos existentes (default: true)
+     * @param {boolean} configuracion.limpiarAntes - Si debe limpiar datos existentes con model.clearData() (default: true).
+     *        En APEX 26.2 clearData() deja la grilla pendiente de una nueva lectura asíncrona; preferir descartarAntes.
+     * @param {boolean} configuracion.descartarAntes - Si debe descartar antes los cambios sin guardar con
+     *        descartarCambios(), sin consultar al servidor (default: false). -.RP-ClaudeAssist 31/10/2026
      * @param {boolean} configuracion.refrescar - Si debe refrescar la grilla (default: true)
-     * @param {boolean} configuracion.modoEdicion - Si debe habilitar modo edición (default: true)
+     * @param {boolean} configuracion.modoEdicion - Si debe habilitar modo edición (default: true).
+     *        El modo edición se activa después de insertar las filas. -.RP-ClaudeAssist 31/10/2026
      * @param {function} configuracion.callback - Función a ejecutar después de setear datos
      * @returns {object} - Objeto con resultado de la operación
      */
@@ -533,16 +670,23 @@ window.invUtils = (function (apex, $) {
             const grid = apex.region(configuracion.regionId).call("getViews").grid;
             const model = grid.model;
 
-            // Habilitar modo edición si se especifica (por defecto true)
+            // Descartar los cambios sin guardar si se especifica (por defecto false). -.RP-ClaudeAssist 31/10/2026
+            if (configuracion.descartarAntes === true) {
+                var descarte = descartarCambios(configuracion.regionId);
+                if (!descarte.success) {
+                    throw new Error('No se pudieron descartar los cambios: ' + descarte.error);
+                }
+            }
+
+            // Habilitar edición en el modelo si se especifica (por defecto true).
+            // La vista entra en modo edición recién después de insertar: en APEX 26.2, setEditMode(true)
+            // falla si la celda activa quedó en una fila ya eliminada. -.RP-ClaudeAssist 31/10/2026
             if (configuracion.modoEdicion !== false) {
                 try {
-                    // Habilitar edición en el modelo (requiere que la región ya sea editable para guardar)
+                    // Requiere que la región ya sea editable para guardar
                     model.setOption("editable", true);
-                    // Activar modo edición en la grilla
-                    grid.view$.grid("setEditMode", true);
-                    apex.debug.info('invUtils: Modo edición habilitado para:', configuracion.regionId);
                 } catch (editError) {
-                    console.warn('invUtils: No se pudo habilitar modo edición:', editError);
+                    console.warn('invUtils: No se pudo habilitar la edición del modelo:', editError);
                 }
             }
 
@@ -605,6 +749,11 @@ window.invUtils = (function (apex, $) {
             // Limpiar datos existentes si se especifica
             if (configuracion.limpiarAntes !== false) {
                 model.clearData();
+            }
+
+            // Comprobar que el modelo acepte filas nuevas (por ejemplo, que no esté recargándose). -.RP-ClaudeAssist 31/10/2026
+            if (datos.length && !model.allowAdd()) {
+                throw new Error('El modelo de ' + configuracion.regionId + ' no permite agregar filas (allowAdd)');
             }
 
             // Contador de registros procesados
@@ -710,6 +859,16 @@ window.invUtils = (function (apex, $) {
                     } catch (regionRefreshError) {
                         console.warn('invUtils: No se pudo refrescar la región:', regionRefreshError);
                     }
+                }
+            }
+
+            // Activar el modo edición de la vista al final, con las filas nuevas ya en el modelo. -.RP-ClaudeAssist 31/10/2026
+            if (configuracion.modoEdicion !== false) {
+                try {
+                    grid.view$.grid("setEditMode", true);
+                    apex.debug.info('invUtils: Modo edición habilitado para:', configuracion.regionId);
+                } catch (editError) {
+                    console.warn('invUtils: No se pudo habilitar modo edición:', editError);
                 }
             }
 
@@ -5375,6 +5534,9 @@ window.invUtils = (function (apex, $) {
         cancelarEjecucionPendiente,
         ejecutarSiCambia,
         cancelarEjecucionesPendientes,
+        mostrarSpinner,
+        ocultarSpinner,
+        ejecutarConSpinner,
         normalizarNumero,
         formatearNumero: formatearNumeroEuropeo,
         formatearNumeroEuropeo,
@@ -5389,6 +5551,8 @@ window.invUtils = (function (apex, $) {
         grid: {
             // Edición y datos
             habilitarEdicion,
+            deshabilitarEdicion,
+            descartarCambios,
             extraerDatos,
             extraerCampos,
             cargarDatos,

@@ -21,6 +21,8 @@ Los ejemplos de configuración están en el [manual](manual.md#ejemplos-de-uso).
 
 | Función o familia | Retorno y efecto |
 |---|---|
+| `invUtils.mostrarSpinner`, `ocultarSpinner` | Sin retorno. Muestran y ocultan el indicador de espera de APEX (`apex.widget.waitPopup`), que bloquea la página. Admiten llamadas anidadas: el indicador se cierra cuando `ocultarSpinner` se llamó tantas veces como `mostrarSpinner`. `ocultarSpinner(true)` lo cierra aunque queden llamadas pendientes. |
+| `invUtils.ejecutarConSpinner` | `Promise` con el resultado del proceso; se rechaza si el proceso falla. Muestra el indicador antes de ejecutar y lo oculta al terminar, también ante un error. |
 | `invUtils.item.leerNumero`, `leerValorNumerico` | Número convertido o `defaultValue`; usan interpretación europea. |
 | `invUtils.item.leerNumeros` | Array de números, en el orden de los ítems recibidos. |
 | `invUtils.grid.leerCelda` y variantes de lectura de valor | Valor leído o `null` cuando no se encuentra. Consultar la variante numérica para su valor por defecto. |
@@ -30,7 +32,10 @@ Los ejemplos de configuración están en el [manual](manual.md#ejemplos-de-uso).
 | `invUtils.grid.asignarCeldaVerificada`, `asignarCeldaPausandoEventos` y sus variantes | `Promise<boolean>`; realizan verificaciones y reintentos. |
 | `invUtils.grid.recalcularFilas` | No devuelve una promesa; programa el trabajo mediante un temporizador. |
 | `invUtils.grid.escucharCambios` | `viewId` de la suscripción (texto) o `false` ante error. Cada llamada agrega un listener; para quitarlo, usar `model.unSubscribe(viewId)`. |
-| `invUtils.grid.habilitarEdicion`, `cargarDatos` y variantes con `modoEdicion` | Activan la edición en el navegador. Solo permiten guardar si la región ya está declarada como editable en APEX, con su proceso de DML. |
+| `invUtils.grid.habilitarEdicion`, `cargarDatos` y variantes con `modoEdicion` | Activan la edición en el navegador. Solo permiten guardar si la región ya está declarada como editable en APEX, con su proceso de DML. `cargarDatos` activa el modo edición de la vista **después** de insertar las filas. |
+| `invUtils.grid.deshabilitarEdicion` | Booleano. Sale del modo edición de la vista; no cambia la opción `editable` del modelo, así que se pueden seguir agregando filas. |
+| `invUtils.grid.descartarCambios` | Objeto con `success`, `eliminadas` y `revertidas`; incluye `error` cuando falla. Sale del modo edición, quita del modelo las filas insertadas sin guardar y revierte las modificadas o marcadas para borrar. No consulta al servidor ni vuelve a leer las filas guardadas. |
+| `invUtils.grid.cargarDatos` con `descartarAntes: true` | Llama a `descartarCambios` antes de insertar. Si el modelo no acepta filas nuevas (`allowAdd()` falso), devuelve `success: false` sin insertar. |
 | `invUtils.grid.sumarColumna`, `sumarTotal` | Objeto con la suma inicial y un método para recalcular; véase el detalle al final del catálogo. |
 | `invUtils.grid.depurarCambios` | Objeto de control de depuración o `null`; véase el detalle al final del catálogo. |
 
@@ -69,6 +74,9 @@ Prefijo: `invUtils.`
 | `cancelarEjecucionPendiente(key)` |
 | `ejecutarSiCambia(key, newValue, callback, delay = 100)` |
 | `cancelarEjecucionesPendientes()` |
+| `mostrarSpinner()` |
+| `ocultarSpinner(forzar = false)` |
+| `ejecutarConSpinner(proceso)` |
 | `normalizarNumero(value)` |
 | `formatearNumeroEuropeo(value, decimalPlaces = 2, useThousandsSeparator = true)` |
 | `convertirNumeroEuropeo(value, decimalPlaces = 2)` |
@@ -90,6 +98,8 @@ Prefijo: `invUtils.grid.`
 | Firma |
 |---|
 | `habilitarEdicion(regionId)` |
+| `deshabilitarEdicion(regionId)` |
+| `descartarCambios(regionId)` |
 | `extraerDatos(configuracion)` |
 | `extraerCampos(regionId, campos, campoDestino)` |
 | `cargarDatos(configuracion)` |
